@@ -1,5 +1,5 @@
 
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import httpx
 from selectolax.lexbor import LexborHTMLParser
@@ -165,31 +165,74 @@ class GenericHTMLScraper(BaseScraper):
         return normalize_text(value)
 
 
+    
     def _get_next_page(
         self,
         parser: LexborHTMLParser,
         current_url: str,
     ) -> str | None:
-        """Find the URL of the next results page."""
+        """Find the next page using configured pagination links."""
         selector = self.source.pagination.next_selector
 
         if not selector:
             return None
 
-        element = parser.css_first(selector)
+        current_parts = urlsplit(current_url)
+        current_query = parse_qs(current_parts.query)
 
-        if element is None:
-            return None
+        try:
+            current_start = int(
+                current_query.get("start", ["0"])[0]
+            )
+        except ValueError:
+            current_start = 0
 
-        href = element.attributes.get("href")
+        candidate_urls: list[str] = []
+        numbered_pages: list[tuple[int, str]] = []
 
-        if not href:
-            return None
+        for element in parser.css(selector):
+            href = element.attributes.get("href")
 
-        next_url = urljoin(current_url, href)
-        scheme = urlsplit(next_url).scheme
+            if not href:
+                continue
 
-        if scheme not in {"http", "https"}:
-            return None
+            next_url = urljoin(current_url, href)
+            next_parts = urlsplit(next_url)
 
-        return next_url
+            if next_parts.scheme not in {"http", "https"}:
+                continue
+
+            # Pagination must stay on the same host.
+            if next_parts.netloc != current_parts.netloc:
+                continue
+
+            if next_url.rstrip("/") == current_url.rstrip("/"):
+                continue
+
+            if next_url not in candidate_urls:
+                candidate_urls.append(next_url)
+
+            query = parse_qs(next_parts.query)
+            start_values = query.get("start")
+
+            if not start_values:
+                continue
+
+            try:
+                next_start = int(start_values[0])
+            except ValueError:
+                continue
+
+            if next_start > current_start:
+                numbered_pages.append((next_start, next_url))
+
+        # If numbered pagination exists, choose the closest next page.
+        if numbered_pages:
+            return min(numbered_pages, key=lambda page: page[0])[1]
+
+        # Otherwise, use the first valid link selected by the configuration.
+        if candidate_urls:
+            return candidate_urls[0]
+
+        return None
+

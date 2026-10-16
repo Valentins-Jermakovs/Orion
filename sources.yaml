@@ -40,4 +40,5 @@ sources:
         required: true
 
     pagination:
-      max_pages: 1
+      next_selector: "a[href*='start=']"
+      max_pages: 3
