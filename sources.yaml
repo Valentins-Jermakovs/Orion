@@ -32,7 +32,7 @@ sources:
         value: EUR
 
       salary_period:
-        value: month
+        selector: ".salary-block"
 
       url:
         selector: a.jobad-url

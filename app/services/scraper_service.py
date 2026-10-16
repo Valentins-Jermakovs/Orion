@@ -1,3 +1,4 @@
+
 import logging
 import re
 from datetime import datetime, timezone
@@ -7,7 +8,6 @@ from pathlib import Path
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.job import Job
 from app.schemas.job import JobCreate
 from app.scrapers.config_loader import (
     get_enabled_sources,
@@ -17,6 +17,7 @@ from app.scrapers.generic_html import GenericHTMLScraper
 from app.scrapers.models import ScrapeResult
 from app.scrapers.registry import ScraperRegistry
 from app.services.job_service import JobService
+
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,9 @@ class ScraperService:
                     result = ScrapeResult(
                         source_id=source.source_id,
                         source_name=source.name,
-                        errors=[f"{type(error).__name__}: {error}"],
+                        errors=[
+                            f"{type(error).__name__}: {error}"
+                        ],
                     )
 
                 results.append(result)
@@ -110,9 +113,15 @@ class ScraperService:
             try:
                 job_data = scraped_job.model_dump()
 
-                job_data["salary_min"] = self._parse_salary(job_data["salary_min"])
-                job_data["salary_max"] = self._parse_salary(job_data["salary_max"])
+                # Parse salary values.
+                job_data["salary_min"] = self._parse_salary(
+                    job_data["salary_min"]
+                )
+                job_data["salary_max"] = self._parse_salary(
+                    job_data["salary_max"]
+                )
 
+                # Correct reversed salary ranges.
                 salary_min = job_data["salary_min"]
                 salary_max = job_data["salary_max"]
 
@@ -122,8 +131,8 @@ class ScraperService:
                     and salary_min > salary_max
                 ):
                     logger.warning(
-                        "Reversed salary range for '%s' from '%s': %s > %s. "
-                        "Swapping values.",
+                        "Reversed salary range for '%s' from '%s': "
+                        "%s > %s. Swapping values.",
                         scraped_job.title,
                         source_id,
                         salary_min,
@@ -135,6 +144,12 @@ class ScraperService:
                         salary_min,
                     )
 
+                # Convert the source salary period to a standard value.
+                job_data["salary_period"] = self._parse_salary_period(
+                    job_data["salary_period"]
+                )
+
+                # Parse the publication date.
                 job_data["published_at"] = self._parse_date(
                     job_data["published_at"]
                 )
@@ -162,7 +177,6 @@ class ScraperService:
                     source_id,
                 )
 
-    
     @staticmethod
     def _parse_salary(value: str | None) -> Decimal | None:
         """Convert a salary string into a positive decimal amount."""
@@ -195,11 +209,70 @@ class ScraperService:
         except InvalidOperation:
             return None
 
+        # Zero usually means that the source did not provide a salary.
         if not amount.is_finite() or amount <= 0:
             return None
 
         return amount
 
+    @staticmethod
+    def _parse_salary_period(value: str | None) -> str | None:
+        """Convert the salary period to a standard value."""
+        if not value:
+            return None
+
+        normalized = re.sub(r"\s+", "", value.casefold())
+
+        if any(
+            marker in normalized
+            for marker in (
+                "€/h",
+                "/h",
+                "/st",
+                "stund",
+                "hourly",
+                "perhour",
+            )
+        ):
+            return "hour"
+
+        if any(
+            marker in normalized
+            for marker in (
+                "/dien",
+                "dienā",
+                "dienā",
+                "daily",
+                "perday",
+            )
+        ):
+            return "day"
+
+        if any(
+            marker in normalized
+            for marker in (
+                "/gad",
+                "gadā",
+                "yearly",
+                "annually",
+                "peryear",
+            )
+        ):
+            return "year"
+
+        if any(
+            marker in normalized
+            for marker in (
+                "/mēn",
+                "mēnesī",
+                "mēnes",
+                "monthly",
+                "permonth",
+            )
+        ):
+            return "month"
+
+        return None
 
     @staticmethod
     def _parse_date(value: str | None) -> datetime | None:
@@ -208,7 +281,9 @@ class ScraperService:
             return None
 
         try:
-            parsed_date = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            parsed_date = datetime.fromisoformat(
+                value.strip().replace("Z", "+00:00")
+            )
         except ValueError:
             return None
 
