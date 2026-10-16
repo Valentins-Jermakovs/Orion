@@ -37,6 +37,33 @@ class PaginationConfig(BaseModel):
     max_pages: int = Field(default=1, ge=1, le=100)
 
 
+class DetailPageConfig(BaseModel):
+    """Configuration for extracting fields from a vacancy page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    max_details: int = Field(default=3, ge=0, le=100)
+
+    row_selector: str = Field(
+        default=r"div.flex.gap-2\.5",
+        min_length=1,
+    )
+
+    label_selector: str = Field(
+        default="div:nth-child(2) > div:first-child",
+        min_length=1,
+    )
+
+    value_selector: str = Field(
+        default="div:nth-child(2) > div.font-semibold",
+        min_length=1,
+    )
+
+    # Maps an application field to its label on the source website.
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
 class SourceConfig(BaseModel):
     """Configuration for one job website."""
 
@@ -45,9 +72,13 @@ class SourceConfig(BaseModel):
         extra="forbid",
     )
 
-    source_id: str = Field(alias="id", min_length=1, max_length=100)
-    name: str = Field(min_length=1, max_length=200)
+    source_id: str = Field(
+        alias="id",
+        min_length=1,
+        max_length=100,
+    )
 
+    name: str = Field(min_length=1, max_length=200)
     enabled: bool = True
 
     start_urls: list[str] = Field(min_length=1)
@@ -57,6 +88,10 @@ class SourceConfig(BaseModel):
 
     pagination: PaginationConfig = Field(
         default_factory=PaginationConfig,
+    )
+
+    detail_page: DetailPageConfig = Field(
+        default_factory=DetailPageConfig,
     )
 
 

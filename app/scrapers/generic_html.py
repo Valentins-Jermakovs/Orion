@@ -1,4 +1,4 @@
-
+import logging
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 import httpx
@@ -10,8 +10,11 @@ from app.scrapers.models import ScrapedJob, ScrapeResult
 from app.utils.normalization import normalize_text
 
 
+logger = logging.getLogger(__name__)
+
+
 class GenericHTMLScraper(BaseScraper):
-    """Collect job vacancies using configurable HTML selectors."""
+    """Collect vacancies using configurable HTML selectors."""
 
     def __init__(
         self,
@@ -32,6 +35,7 @@ class GenericHTMLScraper(BaseScraper):
         errors: list[str] = []
         visited_pages: set[str] = set()
         pages_processed = 0
+        details_processed = 0
 
         for start_url in self.source.start_urls:
             current_url = start_url
@@ -61,29 +65,50 @@ class GenericHTMLScraper(BaseScraper):
                                 page_url=current_url,
                             )
 
-                            if job is not None:
-                                jobs.append(job)
+                            if job is None:
+                                continue
 
-                        except (ValueError, TypeError) as exc:
+                            # Limit how many individual vacancy pages
+                            # are opened during one scraping run.
+                            if (
+                                self.source.detail_page.enabled
+                                and details_processed
+                                < self.source.detail_page.max_details
+                            ):
+                                details_processed += 1
+
+                                try:
+                                    job = await self._enrich_job(job)
+                                except (
+                                    httpx.HTTPError,
+                                    ValueError,
+                                ) as error:
+                                    errors.append(
+                                        f"Failed to load details for "
+                                        f"'{job.title}': "
+                                        f"{type(error).__name__}: {error}"
+                                    )
+
+                            jobs.append(job)
+
+                        except (ValueError, TypeError) as error:
                             errors.append(
                                 f"Failed to parse a vacancy on "
-                                f"{current_url}: {exc}"
+                                f"{current_url}: {error}"
                             )
 
-                    next_url = self._get_next_page(
+                    current_url = self._get_next_page(
                         parser=parser,
                         current_url=current_url,
                     )
 
-                    if next_url is None:
+                    if current_url is None:
                         break
 
-                    current_url = next_url
-
-                except (httpx.HTTPError, ValueError) as exc:
+                except (httpx.HTTPError, ValueError) as error:
                     errors.append(
                         f"Failed to process {current_url}: "
-                        f"{type(exc).__name__}: {exc}"
+                        f"{type(error).__name__}: {error}"
                     )
                     break
 
@@ -136,13 +161,12 @@ class GenericHTMLScraper(BaseScraper):
 
         return ScrapedJob(**data)
 
-    
     def _extract_field(
         self,
         card,
         field_config: ScraperFieldConfig,
     ) -> str | None:
-        """Extract a constant, text, or attribute from an HTML card."""
+        """Extract a constant, text value, or HTML attribute."""
         if field_config.value is not None:
             return normalize_text(field_config.value)
 
@@ -165,13 +189,102 @@ class GenericHTMLScraper(BaseScraper):
         return normalize_text(value)
 
 
-    
+    async def _enrich_job(self, job: ScrapedJob) -> ScrapedJob:
+        """Fetch a vacancy page and extract configured detail fields."""
+        config = self.source.detail_page
+
+        html = await self.fetch_page(job.original_url)
+        parser = LexborHTMLParser(html)
+
+        label_to_field = {
+            self._normalize_label(label): field_name
+            for field_name, label in config.fields.items()
+        }
+
+        extracted_fields: dict[str, str] = {}
+
+        for row in parser.css(config.row_selector):
+            value_element = row.css_first(config.value_selector)
+
+            if value_element is None:
+                continue
+
+            value = normalize_text(
+                value_element.text(separator=" ", strip=True)
+            )
+
+            if not value:
+                continue
+
+            # First try the configured label selector.
+            label_element = row.css_first(config.label_selector)
+            label = ""
+
+            if label_element is not None:
+                label = normalize_text(
+                    label_element.text(separator=" ", strip=True)
+                ) or ""
+
+            field_name = label_to_field.get(
+                self._normalize_label(label)
+            )
+
+            # If the selected element contains both the label and value,
+            # search nested elements for an exact configured label.
+            if field_name is None:
+                for element in row.css("div"):
+                    candidate = normalize_text(
+                        element.text(separator=" ", strip=True)
+                    )
+
+                    if not candidate:
+                        continue
+
+                    candidate_field = label_to_field.get(
+                        self._normalize_label(candidate)
+                    )
+
+                    if candidate_field is not None:
+                        label = candidate
+                        field_name = candidate_field
+                        break
+
+            if field_name is None:
+                continue
+
+            extracted_fields[field_name] = value
+
+            logger.info(
+                "Matched detail field for '%s': %s=%r",
+                job.title,
+                field_name,
+                value,
+            )
+
+        logger.info(
+            "Extracted detail fields for '%s': %s",
+            job.title,
+            extracted_fields,
+        )
+
+        if not extracted_fields:
+            return job
+
+        return job.model_copy(update=extracted_fields)
+
+    @staticmethod
+    def _normalize_label(value: str) -> str:
+        """Normalize a detail-page label for matching."""
+        normalized = normalize_text(value) or ""
+
+        return normalized.casefold().rstrip(":").strip()
+
     def _get_next_page(
         self,
         parser: LexborHTMLParser,
         current_url: str,
     ) -> str | None:
-        """Find the next page using configured pagination links."""
+        """Find the closest next page using configured pagination links."""
         selector = self.source.pagination.next_selector
 
         if not selector:
@@ -202,7 +315,7 @@ class GenericHTMLScraper(BaseScraper):
             if next_parts.scheme not in {"http", "https"}:
                 continue
 
-            # Pagination must stay on the same host.
+            # Do not follow pagination links to another host.
             if next_parts.netloc != current_parts.netloc:
                 continue
 
@@ -226,13 +339,10 @@ class GenericHTMLScraper(BaseScraper):
             if next_start > current_start:
                 numbered_pages.append((next_start, next_url))
 
-        # If numbered pagination exists, choose the closest next page.
         if numbered_pages:
             return min(numbered_pages, key=lambda page: page[0])[1]
 
-        # Otherwise, use the first valid link selected by the configuration.
         if candidate_urls:
             return candidate_urls[0]
 
         return None
-

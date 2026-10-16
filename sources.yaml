@@ -1,4 +1,3 @@
-
 sources:
   - id: cvmarket_lv
     name: CVMarket.lv
@@ -39,6 +38,19 @@ sources:
         attribute: href
         required: true
 
+      published_at:
+        selector: ".main-info > div:first-child > div span"
+
     pagination:
       next_selector: "a[href*='start=']"
       max_pages: 3
+
+    detail_page:
+      enabled: true
+      max_details: 3
+
+      fields:
+        published_at: "Ievadīts"
+        employment_type: "Darba laiks"
+        external_id: "Darba sludinājuma numurs:"
+        location: "Atrašanās vieta"

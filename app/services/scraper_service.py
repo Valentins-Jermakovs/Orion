@@ -1,7 +1,6 @@
-
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -241,7 +240,6 @@ class ScraperService:
             for marker in (
                 "/dien",
                 "dienā",
-                "dienā",
                 "daily",
                 "perday",
             )
@@ -276,18 +274,66 @@ class ScraperService:
 
     @staticmethod
     def _parse_date(value: str | None) -> datetime | None:
-        """Parse an ISO-formatted publication date."""
+        """Parse ISO dates, formatted dates, and Latvian relative times."""
         if not value:
             return None
 
+        normalized = value.strip().casefold()
+
+        # Parse ISO-formatted dates first.
         try:
             parsed_date = datetime.fromisoformat(
-                value.strip().replace("Z", "+00:00")
+                normalized.replace("z", "+00:00")
             )
         except ValueError:
+            parsed_date = None
+
+        if parsed_date is not None:
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(
+                    tzinfo=timezone.utc
+                )
+
+            return parsed_date.astimezone(timezone.utc)
+
+        # Parse dates such as 2026.10.16 and 16.10.2026.
+        for date_format in ("%Y.%m.%d", "%d.%m.%Y"):
+            try:
+                parsed_date = datetime.strptime(
+                    normalized,
+                    date_format,
+                )
+                return parsed_date.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+
+        # Parse relative dates, for example "pirms 3 stundām".
+        match = re.search(
+            r"pirms\s+(\d+)\s+([a-zāčēģīķļņōŗšūž]+)",
+            normalized,
+        )
+
+        if match is None:
             return None
 
-        if parsed_date.tzinfo is None:
-            parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+        amount = int(match.group(1))
+        unit = match.group(2)
 
-        return parsed_date.astimezone(timezone.utc)
+        if unit.startswith("sekund"):
+            delta = timedelta(seconds=amount)
+        elif unit.startswith(("minūt", "minut")):
+            delta = timedelta(minutes=amount)
+        elif unit.startswith("stund"):
+            delta = timedelta(hours=amount)
+        elif unit.startswith("dien"):
+            delta = timedelta(days=amount)
+        elif unit.startswith("nedēļ"):
+            delta = timedelta(weeks=amount)
+        elif unit.startswith(("mēnes", "mēneš")):
+            delta = timedelta(days=30 * amount)
+        elif unit.startswith("gad"):
+            delta = timedelta(days=365 * amount)
+        else:
+            return None
+
+        return datetime.now(timezone.utc) - delta
