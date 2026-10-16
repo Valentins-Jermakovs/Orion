@@ -1,0 +1,217 @@
+import json
+import logging
+from urllib.parse import urljoin, urlsplit
+
+import httpx
+
+from app.scrapers.base import BaseScraper
+from app.scrapers.config import SourceConfig, ScraperFieldConfig
+from app.scrapers.models import ScrapedJob, ScrapeResult
+from app.utils.normalization import normalize_text
+
+
+logger = logging.getLogger(__name__)
+
+
+class JSONScraper(BaseScraper):
+    """Collect vacancies from JSON APIs."""
+
+    def __init__(
+        self,
+        source: SourceConfig,
+        client: httpx.AsyncClient,
+    ) -> None:
+        super().__init__(
+            source_id=source.source_id,
+            source_name=source.name,
+            client=client,
+        )
+
+        self.source = source
+
+    async def scrape(self) -> ScrapeResult:
+        """Download JSON responses and convert records into vacancies."""
+        jobs: list[ScrapedJob] = []
+        errors: list[str] = []
+        pages_processed = 0
+
+        for source_url in self.source.start_urls:
+            try:
+                content = await self.fetch_page(source_url)
+                payload = json.loads(content)
+                pages_processed += 1
+
+                records = self._get_records(payload)
+
+                for record_number, record in enumerate(records, start=1):
+                    if not isinstance(record, dict):
+                        continue
+
+                    try:
+                        job = self._parse_record(
+                            record=record,
+                            source_url=source_url,
+                        )
+
+                        # Skip metadata objects, such as API legal notices.
+                        if job is not None:
+                            jobs.append(job)
+
+                    except (ValueError, TypeError) as error:
+                        message = (
+                            f"Failed to parse JSON record "
+                            f"{record_number} from {source_url}: {error}"
+                        )
+                        errors.append(message)
+
+                        logger.warning("%s", message)
+
+            except (
+                httpx.HTTPError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as error:
+                message = (
+                    f"Failed to process JSON source {source_url}: "
+                    f"{type(error).__name__}: {error}"
+                )
+                errors.append(message)
+
+                logger.exception(
+                    "Could not process JSON source '%s'.",
+                    source_url,
+                )
+
+        return self.create_result(
+            jobs=jobs,
+            pages_processed=pages_processed,
+            errors=errors,
+        )
+
+    def _get_records(self, payload: object) -> list[object]:
+        """Find the list of records in a JSON API response."""
+        if isinstance(payload, list):
+            return payload
+
+        if isinstance(payload, dict):
+            # Support common JSON API response structures.
+            for key in ("jobs", "results", "vacancies", "data"):
+                value = payload.get(key)
+
+                if isinstance(value, list):
+                    return value
+
+        raise ValueError(
+            "Expected a JSON array or an object containing a "
+            "'jobs', 'results', 'vacancies', or 'data' array."
+        )
+
+    def _parse_record(
+        self,
+        record: dict,
+        source_url: str,
+    ) -> ScrapedJob | None:
+        """Map one JSON object to a normalized vacancy."""
+        # Check the title first. API metadata without a title is ignored.
+        title_config = self.source.fields.get("title")
+
+        if title_config is None:
+            raise ValueError(
+                "JSON source must define a 'title' field."
+            )
+
+        title = self._extract_field(
+            record=record,
+            field_config=title_config,
+        )
+
+        if not title:
+            return None
+
+        data: dict[str, str | None] = {
+            "title": title,
+        }
+
+        for field_name, field_config in self.source.fields.items():
+            if field_name == "title":
+                continue
+
+            value = self._extract_field(
+                record=record,
+                field_config=field_config,
+            )
+
+            if field_config.required and not value:
+                raise ValueError(
+                    f"Required field '{field_name}' is missing."
+                )
+
+            # Map the common source field names to ScrapedJob fields.
+            if field_name in {"url", "original_url"}:
+                field_name = "original_url"
+
+            data[field_name] = value
+
+        original_url = data.get("original_url")
+
+        if not original_url:
+            raise ValueError(
+                "The JSON record does not contain an original vacancy URL."
+            )
+
+        original_url = urljoin(source_url, original_url)
+        parsed_url = urlsplit(original_url)
+
+        if parsed_url.scheme not in {"http", "https"}:
+            raise ValueError(
+                "Vacancy URL must use HTTP or HTTPS."
+            )
+
+        data["original_url"] = original_url
+
+        if not data.get("external_id"):
+            data["external_id"] = None
+
+        return ScrapedJob(**data)
+
+    def _extract_field(
+        self,
+        record: dict,
+        field_config: ScraperFieldConfig,
+    ) -> str | None:
+        """Extract a constant or a value using a dotted JSON path."""
+        if field_config.value is not None:
+            return normalize_text(field_config.value)
+
+        if field_config.json_path is None:
+            raise ValueError(
+                "JSON fields must use 'json_path' or 'value' configuration."
+            )
+
+        value: object = record
+
+        for part in field_config.json_path.split("."):
+            if isinstance(value, dict):
+                value = value.get(part)
+
+            elif isinstance(value, list) and part.isdigit():
+                index = int(part)
+
+                if index >= len(value):
+                    return None
+
+                value = value[index]
+
+            else:
+                return None
+
+            if value is None:
+                return None
+
+        # Convert values such as numeric IDs and salaries to strings.
+        if isinstance(value, (dict, list)):
+            return normalize_text(
+                json.dumps(value, ensure_ascii=False)
+            )
+
+        return normalize_text(str(value))

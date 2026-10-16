@@ -1,23 +1,37 @@
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ScraperFieldConfig(BaseModel):
-    """Configuration for extracting one field from HTML."""
+    """Configuration for extracting one field from a data source."""
 
     model_config = ConfigDict(extra="forbid")
 
     selector: str | None = Field(default=None, min_length=1)
+    column: str | None = Field(default=None, min_length=1)
+    json_path: str | None = Field(default=None, min_length=1)
     attribute: str | None = None
     value: str | None = None
     required: bool = False
 
     @model_validator(mode="after")
     def validate_configuration(self) -> "ScraperFieldConfig":
-        """Require either a selector or a constant value."""
-        if (self.selector is None) == (self.value is None):
+        """Require exactly one extraction method."""
+        configured_methods = sum(
+            value is not None
+            for value in (
+                self.selector,
+                self.column,
+                self.json_path,
+                self.value,
+            )
+        )
+
+        if configured_methods != 1:
             raise ValueError(
-                "Specify exactly one of 'selector' or 'value'."
+                "Specify exactly one of 'selector', 'column', "
+                "'json_path', or 'value'."
             )
 
         if self.attribute and not self.selector:
@@ -65,7 +79,7 @@ class DetailPageConfig(BaseModel):
 
 
 class SourceConfig(BaseModel):
-    """Configuration for one job website."""
+    """Configuration for one job source."""
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -81,10 +95,16 @@ class SourceConfig(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     enabled: bool = True
 
-    start_urls: list[str] = Field(min_length=1)
-    item_selector: str = Field(min_length=1)
+    scraper_type: Literal["html", "csv", "json"] = "html"
 
-    fields: dict[str, ScraperFieldConfig]
+    start_urls: list[str] = Field(min_length=1)
+
+    # Used only by the HTML scraper.
+    item_selector: str | None = Field(default=None, min_length=1)
+
+    fields: dict[str, ScraperFieldConfig] = Field(
+        default_factory=dict,
+    )
 
     pagination: PaginationConfig = Field(
         default_factory=PaginationConfig,
@@ -93,6 +113,22 @@ class SourceConfig(BaseModel):
     detail_page: DetailPageConfig = Field(
         default_factory=DetailPageConfig,
     )
+
+    @model_validator(mode="after")
+    def validate_scraper_config(self) -> "SourceConfig":
+        """Validate fields required by each scraper type."""
+        if self.scraper_type == "html":
+            if not self.item_selector:
+                raise ValueError(
+                    "item_selector is required for HTML sources."
+                )
+
+            if not self.fields:
+                raise ValueError(
+                    "fields must be configured for HTML sources."
+                )
+
+        return self
 
 
 class SourcesConfig(BaseModel):

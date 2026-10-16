@@ -54,3 +54,81 @@ sources:
         employment_type: "Darba laiks"
         external_id: "Darba sludinājuma numurs:"
         location: "Atrašanās vieta"
+
+  - id: nva_open_data
+    name: NVA Open Data
+    enabled: true
+    scraper_type: csv
+
+    start_urls:
+      - https://data.gov.lv/dati/dataset/vakances/resource/7f68f6fc-a0f9-4c31-b43c-770e97a06fda/download/vakances.csv
+
+    fields:
+      title:
+        column: Vakances_nosaukums
+        required: true
+
+      external_id:
+        column: Vakances_Nr
+        required: true
+
+      location:
+        column: Vieta
+
+      employment_type:
+        column: Slodzes_tips
+
+      salary_min:
+        column: Alga_no
+
+      salary_max:
+        column: Alga_lidz
+
+      salary_currency:
+        value: EUR
+
+      url:
+        column: Vakances_paplasinats_apraksts
+        required: true
+
+  - id: remote_ok
+    name: Remote OK
+    enabled: true
+    scraper_type: json
+
+    start_urls:
+      - https://remoteok.com/api
+
+    fields:
+      title:
+        json_path: position
+        required: true
+
+      external_id:
+        json_path: id
+        required: true
+
+      company:
+        json_path: company
+
+      location:
+        json_path: location
+
+      salary_min:
+        json_path: salary_min
+
+      salary_max:
+        json_path: salary_max
+
+      salary_currency:
+        json_path: salary_currency
+
+      description:
+        json_path: description
+
+      published_at:
+        json_path: date
+
+      url:
+        json_path: url
+        required: true

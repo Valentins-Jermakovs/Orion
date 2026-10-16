@@ -4,20 +4,29 @@ import httpx
 
 from app.scrapers.base import BaseScraper
 from app.scrapers.config import SourceConfig
+from app.scrapers.csv_scraper import CSVScraper
+from app.scrapers.generic_html import GenericHTMLScraper
+from app.scrapers.json_scraper import JSONScraper
 
 
-ScraperFactory = Callable[
-    [SourceConfig, httpx.AsyncClient],
-    BaseScraper,
-]
+ScraperFactory = Callable[..., BaseScraper]
 
 
 class ScraperRegistry:
-    """Register and create scrapers for job sources."""
+    """Create the appropriate scraper for each configured source."""
 
-    def __init__(self, default_factory: ScraperFactory) -> None:
-        self.default_factory = default_factory
-        self.scrapers: dict[str, ScraperFactory] = {}
+    def __init__(
+        self,
+        default_factory: ScraperFactory | None = None,
+    ) -> None:
+        self._type_factories: dict[str, ScraperFactory] = {
+            "html": default_factory or GenericHTMLScraper,
+            "csv": CSVScraper,
+            "json": JSONScraper,
+        }
+
+        # Allows a particular source to use a custom scraper.
+        self._source_factories: dict[str, ScraperFactory] = {}
 
     def register(
         self,
@@ -25,29 +34,35 @@ class ScraperRegistry:
         factory: ScraperFactory,
     ) -> None:
         """Register a custom scraper for a specific source."""
-        source_id = source_id.strip().lower()
+        self._source_factories[source_id] = factory
 
-        if not source_id:
-            raise ValueError("Source ID cannot be empty.")
-
-        if source_id in self.scrapers:
-            raise ValueError(
-                f"Scraper for source '{source_id}' is already registered."
-            )
-
-        self.scrapers[source_id] = factory
+    def register_type(
+        self,
+        scraper_type: str,
+        factory: ScraperFactory,
+    ) -> None:
+        """Register a scraper for a source format."""
+        self._type_factories[scraper_type] = factory
 
     def create(
         self,
         source: SourceConfig,
         client: httpx.AsyncClient,
     ) -> BaseScraper:
-        """Create the appropriate scraper for a source."""
-        source_id = source.source_id.strip().lower()
+        """Create the appropriate scraper for a configured source."""
+        factory = self._source_factories.get(source.source_id)
 
-        factory = self.scrapers.get(
-            source_id,
-            self.default_factory,
+        if factory is None:
+            factory = self._type_factories.get(source.scraper_type)
+
+        if factory is None:
+            raise ValueError(
+                f"No scraper registered for source "
+                f"'{source.source_id}' with type "
+                f"'{source.scraper_type}'."
+            )
+
+        return factory(
+            source=source,
+            client=client,
         )
-
-        return factory(source, client)
