@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -17,7 +18,7 @@ class JobFacade:
         """Create a new vacancy or update an existing one."""
         return await self.job_service.create_or_update(job_data)
 
-    async def get_job(self, job_id: UUID) -> Job | None:
+    async def get_job(self, job_id: UUID) -> Job:
         """Return a vacancy by its internal ID."""
         return await self.job_service.get_job(job_id)
 
@@ -27,6 +28,10 @@ class JobFacade:
         location: str | None = None,
         source_id: str | None = None,
         status: str = "active",
+        min_salary: Decimal | None = None,
+        max_salary: Decimal | None = None,
+        salary_currency: str | None = None,
+        employment_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[Job]:
@@ -36,6 +41,10 @@ class JobFacade:
             location=location,
             source_id=source_id,
             status_filter=status,
+            min_salary=min_salary,
+            max_salary=max_salary,
+            salary_currency=salary_currency,
+            employment_type=employment_type,
             limit=limit,
             offset=offset,
         )

@@ -1,7 +1,8 @@
-
+from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,7 +19,6 @@ class JobRepository:
     async def get_by_id(self, job_id: UUID) -> Job | None:
         """Find a vacancy by its internal ID."""
         statement = select(Job).where(Job.id == job_id)
-
         result = await self.session.exec(statement)
 
         return result.first()
@@ -31,7 +31,6 @@ class JobRepository:
         statement = select(Job).where(
             Job.deduplication_key == deduplication_key
         )
-
         result = await self.session.exec(statement)
 
         return result.first()
@@ -42,6 +41,10 @@ class JobRepository:
         location: str | None = None,
         source_id: str | None = None,
         status: str = "active",
+        min_salary: Decimal | None = None,
+        max_salary: Decimal | None = None,
+        salary_currency: str | None = None,
+        employment_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[Job]:
@@ -50,7 +53,6 @@ class JobRepository:
 
         if query:
             search_term = f"%{query.strip()}%"
-
             statement = statement.where(
                 or_(
                     Job.title.ilike(search_term),
@@ -66,7 +68,47 @@ class JobRepository:
 
         if source_id:
             statement = statement.where(
-                Job.source_id == source_id
+                Job.source_id == source_id.strip().lower()
+            )
+
+        if employment_type:
+            statement = statement.where(
+                Job.employment_type.ilike(
+                    f"%{employment_type.strip()}%"
+                )
+            )
+
+        if salary_currency:
+            statement = statement.where(
+                Job.salary_currency == salary_currency.strip().upper()
+            )
+
+        # Minimum salary: the vacancy's salary range must reach
+        # the requested minimum. If only salary_min is available,
+        # it must itself be at least the requested minimum.
+        if min_salary is not None:
+            statement = statement.where(
+                or_(
+                    Job.salary_max >= min_salary,
+                    and_(
+                        Job.salary_max.is_(None),
+                        Job.salary_min >= min_salary,
+                    ),
+                )
+            )
+
+        # Maximum salary: the vacancy's range must start at or below
+        # the requested maximum. If only salary_max is available,
+        # it must itself be at most the requested maximum.
+        if max_salary is not None:
+            statement = statement.where(
+                or_(
+                    Job.salary_min <= max_salary,
+                    and_(
+                        Job.salary_min.is_(None),
+                        Job.salary_max <= max_salary,
+                    ),
+                )
             )
 
         statement = (
@@ -86,7 +128,6 @@ class JobRepository:
     async def upsert(self, job: Job) -> Job:
         """Insert a vacancy or update it if its key already exists."""
         job_data = job.model_dump()
-
         statement = postgresql_insert(Job).values(job_data)
 
         immutable_fields = {
@@ -117,3 +158,26 @@ class JobRepository:
         result = await self.session.exec(statement)
 
         return result.scalar_one()
+
+    async def mark_not_seen_inactive(
+        self,
+        source_id: str,
+        cutoff: datetime,
+    ) -> int:
+        """Mark active vacancies not seen during a successful scrape."""
+        statement = (
+            update(Job)
+            .where(
+                Job.source_id == source_id,
+                Job.status == "active",
+                Job.last_seen_at < cutoff,
+            )
+            .values(
+                status="inactive",
+                updated_at=func.now(),
+            )
+        )
+
+        result = await self.session.exec(statement)
+
+        return result.rowcount or 0

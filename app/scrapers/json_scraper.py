@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -7,7 +8,10 @@ import httpx
 from app.scrapers.base import BaseScraper
 from app.scrapers.config import SourceConfig, ScraperFieldConfig
 from app.scrapers.models import ScrapedJob, ScrapeResult
-from app.utils.normalization import normalize_text
+from app.utils.normalization import (
+    normalize_description,
+    normalize_text,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -53,7 +57,6 @@ class JSONScraper(BaseScraper):
                             source_url=source_url,
                         )
 
-                        # Skip metadata objects, such as API legal notices.
                         if job is not None:
                             jobs.append(job)
 
@@ -63,7 +66,6 @@ class JSONScraper(BaseScraper):
                             f"{record_number} from {source_url}: {error}"
                         )
                         errors.append(message)
-
                         logger.warning("%s", message)
 
             except (
@@ -94,7 +96,6 @@ class JSONScraper(BaseScraper):
             return payload
 
         if isinstance(payload, dict):
-            # Support common JSON API response structures.
             for key in ("jobs", "results", "vacancies", "data"):
                 value = payload.get(key)
 
@@ -112,7 +113,6 @@ class JSONScraper(BaseScraper):
         source_url: str,
     ) -> ScrapedJob | None:
         """Map one JSON object to a normalized vacancy."""
-        # Check the title first. API metadata without a title is ignored.
         title_config = self.source.fields.get("title")
 
         if title_config is None:
@@ -125,6 +125,7 @@ class JSONScraper(BaseScraper):
             field_config=title_config,
         )
 
+        # Ignore API metadata objects without a vacancy title.
         if not title:
             return None
 
@@ -146,11 +147,23 @@ class JSONScraper(BaseScraper):
                     f"Required field '{field_name}' is missing."
                 )
 
-            # Map the common source field names to ScrapedJob fields.
-            if field_name in {"url", "original_url"}:
-                field_name = "original_url"
+            target_field = (
+                "original_url"
+                if field_name in {"url", "original_url"}
+                else field_name
+            )
 
-            data[field_name] = value
+            data[target_field] = value
+
+        # Convert the source HTML description to readable text.
+        if data.get("description"):
+            data["description"] = normalize_description(
+                data["description"]
+            )
+
+        # Infer missing fields only from explicit labels in the description.
+        if self.source.source_id == "remote_ok":
+            self._fill_remote_ok_fields(data)
 
         original_url = data.get("original_url")
 
@@ -167,12 +180,66 @@ class JSONScraper(BaseScraper):
                 "Vacancy URL must use HTTP or HTTPS."
             )
 
+        # Do not save a generic listing page as an individual vacancy.
+        if (
+            self.source.source_id == "remote_ok"
+            and parsed_url.netloc.casefold() in {
+                "remoteok.com",
+                "www.remoteok.com",
+            }
+            and parsed_url.path.rstrip("/") == "/remote-jobs"
+        ):
+            logger.warning(
+                "Skipping Remote OK record without an individual "
+                "vacancy URL: '%s'",
+                title,
+            )
+            return None
+
         data["original_url"] = original_url
 
         if not data.get("external_id"):
             data["external_id"] = None
 
         return ScrapedJob(**data)
+
+    def _fill_remote_ok_fields(
+        self,
+        data: dict[str, str | None],
+    ) -> None:
+        """Infer missing location and employment type from labelled text."""
+        description = data.get("description")
+
+        if not description:
+            return
+
+        if not data.get("location"):
+            location_match = re.search(
+                r"(?im)^\s*Location\s*:\s*(.+?)\s*$",
+                description,
+            )
+
+            if location_match:
+                location = normalize_text(location_match.group(1))
+
+                if location:
+                    data["location"] = location[:255]
+
+        if not data.get("employment_type"):
+            employment_match = re.search(
+                r"(?im)^\s*Employment\s*Type\s*:\s*(.+?)\s*$",
+                description,
+            )
+
+            if employment_match:
+                employment_type = normalize_text(
+                    employment_match.group(1)
+                )
+
+                if employment_type:
+                    # Keep the value concise enough for the model field.
+                    employment_type = employment_type.split("|", 1)[0]
+                    data["employment_type"] = employment_type[:100].strip()
 
     def _extract_field(
         self,
@@ -208,10 +275,7 @@ class JSONScraper(BaseScraper):
             if value is None:
                 return None
 
-        # Convert values such as numeric IDs and salaries to strings.
         if isinstance(value, (dict, list)):
-            return normalize_text(
-                json.dumps(value, ensure_ascii=False)
-            )
+            value = json.dumps(value, ensure_ascii=False)
 
         return normalize_text(str(value))

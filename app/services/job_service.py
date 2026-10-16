@@ -1,4 +1,5 @@
-
+from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,6 +10,7 @@ from app.repositories.job_repository import JobRepository
 from app.schemas.job import JobCreate
 from app.utils.normalization import (
     create_deduplication_key,
+    normalize_description,
     normalize_text,
 )
 
@@ -23,20 +25,23 @@ class JobService:
     async def create_or_update(self, job_data: JobCreate) -> Job:
         """Create a vacancy or update an existing one."""
         data = job_data.model_dump()
-
-        # Normalize text fields before saving.
         data["source_id"] = data["source_id"].strip().lower()
 
+        # Normalize fields containing short text values.
         for field in (
             "source_name",
             "title",
             "company",
             "location",
             "employment_type",
-            "description",
             "external_id",
         ):
             data[field] = normalize_text(data[field])
+
+        # Preserve readable paragraphs and line breaks in descriptions.
+        data["description"] = normalize_description(
+            data["description"]
+        )
 
         if not data["source_id"]:
             raise HTTPException(
@@ -89,6 +94,8 @@ class JobService:
                 detail="Invalid vacancy URL or source identifier.",
             ) from None
 
+        # New vacancies are active. If an inactive vacancy appears
+        # again, the upsert will reactivate it.
         job = Job(
             **data,
             deduplication_key=deduplication_key,
@@ -99,6 +106,26 @@ class JobService:
             await self.session.commit()
 
             return saved_job
+
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def mark_not_seen_inactive(
+        self,
+        source_id: str,
+        cutoff: datetime,
+    ) -> int:
+        """Deactivate vacancies missing from a complete source snapshot."""
+        try:
+            count = await self.repository.mark_not_seen_inactive(
+                source_id=source_id.strip().lower(),
+                cutoff=cutoff,
+            )
+
+            await self.session.commit()
+
+            return count
 
         except Exception:
             await self.session.rollback()
@@ -122,6 +149,10 @@ class JobService:
         location: str | None = None,
         source_id: str | None = None,
         status_filter: str = "active",
+        min_salary: Decimal | None = None,
+        max_salary: Decimal | None = None,
+        salary_currency: str | None = None,
+        employment_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[Job]:
@@ -138,11 +169,39 @@ class JobService:
                 detail="Offset cannot be negative.",
             )
 
+        if (
+            min_salary is not None
+            and max_salary is not None
+            and min_salary > max_salary
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="min_salary cannot exceed max_salary.",
+            )
+
+        # Salary values in different currencies must not be compared.
+        if (
+            min_salary is not None or max_salary is not None
+        ) and not salary_currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "salary_currency is required when filtering by salary."
+                ),
+            )
+
+        if salary_currency:
+            salary_currency = salary_currency.strip().upper()
+
         return await self.repository.list_jobs(
             query=query,
             location=location,
             source_id=source_id,
             status=status_filter,
+            min_salary=min_salary,
+            max_salary=max_salary,
+            salary_currency=salary_currency,
+            employment_type=employment_type,
             limit=limit,
             offset=offset,
         )

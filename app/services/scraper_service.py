@@ -60,6 +60,8 @@ class ScraperService:
                     source.source_id,
                 )
 
+                source_started_at = datetime.now(timezone.utc)
+
                 try:
                     scraper = self.scraper_registry.create(
                         source=source,
@@ -73,6 +75,38 @@ class ScraperService:
                         source_name=source.name,
                         result=result,
                     )
+
+                    # Deactivate missing jobs only after a complete,
+                    # non-empty scrape with no parsing or saving errors.
+                    if (
+                        result.jobs
+                        and result.pages_processed > 0
+                        and not result.errors
+                    ):
+                        inactive_count = (
+                            await self.job_service.mark_not_seen_inactive(
+                                source_id=source.source_id,
+                                cutoff=source_started_at,
+                            )
+                        )
+
+                        if inactive_count:
+                            logger.info(
+                                "Marked %s vacancies inactive for "
+                                "source '%s'.",
+                                inactive_count,
+                                source.source_id,
+                            )
+
+                    else:
+                        logger.warning(
+                            "Skipping stale-vacancy update for source "
+                            "'%s': jobs=%s, pages=%s, errors=%s.",
+                            source.source_id,
+                            len(result.jobs),
+                            result.pages_processed,
+                            len(result.errors),
+                        )
 
                     logger.info(
                         "Finished source '%s': %s vacancies found, "

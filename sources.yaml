@@ -121,7 +121,10 @@ sources:
         json_path: salary_max
 
       salary_currency:
-        json_path: salary_currency
+        value: USD
+      
+      salary_period:
+        value: yearly
 
       description:
         json_path: description
