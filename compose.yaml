@@ -1,0 +1,117 @@
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: orion-job-aggregator:local
+    container_name: orion-api
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    environment:
+      APP_NAME: ${APP_NAME:-Orion Job Aggregator}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-orion_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-orion_jobs}
+      REDIS_URL: redis://redis:6379/0
+      SCRAPE_API_KEY: ${SCRAPE_API_KEY:?Set SCRAPE_API_KEY in .env}
+
+      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-3600}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-20}
+      MAX_PAGES_PER_SOURCE: ${MAX_PAGES_PER_SOURCE:-5}
+      JOB_EXPIRY_DAYS: ${JOB_EXPIRY_DAYS:-30}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    image: orion-job-aggregator:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orion-worker
+    restart: unless-stopped
+    init: true
+
+    command: ["python", "-m", "app.worker"]
+
+    environment:
+      APP_NAME: ${APP_NAME:-Orion Job Aggregator}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-orion_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-orion_jobs}
+      REDIS_URL: redis://redis:6379/0
+      SCRAPE_API_KEY: ${SCRAPE_API_KEY:?Set SCRAPE_API_KEY in .env}
+
+      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-3600}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-20}
+      MAX_PAGES_PER_SOURCE: ${MAX_PAGES_PER_SOURCE:-5}
+      JOB_EXPIRY_DAYS: ${JOB_EXPIRY_DAYS:-30}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: orion-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-orion_jobs}
+      POSTGRES_USER: ${POSTGRES_USER:-orion_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: orion-redis
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:

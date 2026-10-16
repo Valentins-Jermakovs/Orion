@@ -1,8 +1,6 @@
 # Environment variables and secrets
 .env
 .env.*
-
-# Keep the example configuration
 !.env.example
 
 # Python
@@ -10,11 +8,12 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
+env/
 
-# Tests and tools
+# Test and lint caches
 .pytest_cache/
 .ruff_cache/
 .coverage
@@ -23,3 +22,10 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
