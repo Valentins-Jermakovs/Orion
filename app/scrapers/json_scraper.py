@@ -1,3 +1,4 @@
+
 import json
 import logging
 import re
@@ -237,7 +238,7 @@ class JSONScraper(BaseScraper):
                 )
 
                 if employment_type:
-                    # Keep the value concise enough for the model field.
+                    # Keep only the first value before a pipe separator.
                     employment_type = employment_type.split("|", 1)[0]
                     data["employment_type"] = employment_type[:100].strip()
 
@@ -275,7 +276,35 @@ class JSONScraper(BaseScraper):
             if value is None:
                 return None
 
-        if isinstance(value, (dict, list)):
+        # Convert lists into readable comma-separated text.
+        # Example: ["Full-Time", "Contract"] -> "Full-Time, Contract".
+        if isinstance(value, list):
+            items: list[str] = []
+
+            for item in value:
+                if item is None:
+                    continue
+
+                if isinstance(item, (dict, list)):
+                    item_text = json.dumps(
+                        item,
+                        ensure_ascii=False,
+                    )
+                else:
+                    item_text = str(item)
+
+                item_text = normalize_text(item_text)
+
+                if item_text:
+                    items.append(item_text)
+
+            if not items:
+                return None
+
+            return normalize_text(", ".join(items))
+
+        # Keep dictionaries as JSON text instead of Python representations.
+        if isinstance(value, dict):
             value = json.dumps(value, ensure_ascii=False)
 
         return normalize_text(str(value))

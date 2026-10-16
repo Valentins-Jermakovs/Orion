@@ -76,36 +76,43 @@ class ScraperService:
                         result=result,
                     )
 
-                    # Deactivate missing jobs only after a complete,
-                    # non-empty scrape with no parsing or saving errors.
-                    if (
-                        result.jobs
-                        and result.pages_processed > 0
-                        and not result.errors
-                    ):
-                        inactive_count = (
-                            await self.job_service.mark_not_seen_inactive(
-                                source_id=source.source_id,
-                                cutoff=source_started_at,
+                    # Only sources that provide a complete snapshot can
+                    # safely mark previously collected jobs as inactive.
+                    if source.complete_snapshot:
+                        if (
+                            result.jobs
+                            and result.pages_processed > 0
+                            and not result.errors
+                        ):
+                            inactive_count = (
+                                await self.job_service.mark_not_seen_inactive(
+                                    source_id=source.source_id,
+                                    cutoff=source_started_at,
+                                )
                             )
-                        )
 
-                        if inactive_count:
-                            logger.info(
-                                "Marked %s vacancies inactive for "
-                                "source '%s'.",
-                                inactive_count,
+                            if inactive_count:
+                                logger.info(
+                                    "Marked %s vacancies inactive for "
+                                    "source '%s'.",
+                                    inactive_count,
+                                    source.source_id,
+                                )
+                        else:
+                            logger.warning(
+                                "Skipping stale-vacancy update for source "
+                                "'%s': jobs=%s, pages=%s, errors=%s.",
                                 source.source_id,
+                                len(result.jobs),
+                                result.pages_processed,
+                                len(result.errors),
                             )
-
                     else:
-                        logger.warning(
+                        logger.debug(
                             "Skipping stale-vacancy update for source "
-                            "'%s': jobs=%s, pages=%s, errors=%s.",
+                            "'%s': source does not provide a complete "
+                            "snapshot.",
                             source.source_id,
-                            len(result.jobs),
-                            result.pages_processed,
-                            len(result.errors),
                         )
 
                     logger.info(
@@ -337,7 +344,9 @@ class ScraperService:
                     normalized,
                     date_format,
                 )
+
                 return parsed_date.replace(tzinfo=timezone.utc)
+
             except ValueError:
                 continue
 

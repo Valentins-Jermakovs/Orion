@@ -58,6 +58,7 @@ sources:
   - id: nva_open_data
     name: NVA Open Data
     enabled: true
+    complete_snapshot: true
     scraper_type: csv
 
     start_urls:
@@ -131,6 +132,54 @@ sources:
 
       published_at:
         json_path: date
+
+      url:
+        json_path: url
+        required: true
+
+  - id: jobicy
+    name: Jobicy
+    enabled: true
+    scraper_type: json
+    complete_snapshot: false
+    start_urls:
+      - https://jobicy.com/api/v2/remote-jobs?count=200
+
+    fields:
+      title:
+        json_path: jobTitle
+        required: true
+
+      external_id:
+        json_path: id
+        required: true
+
+      company:
+        json_path: companyName
+
+      location:
+        json_path: jobGeo
+
+      employment_type:
+        json_path: jobType
+
+      salary_min:
+        json_path: salaryMin
+
+      salary_max:
+        json_path: salaryMax
+
+      salary_currency:
+        json_path: salaryCurrency
+
+      salary_period:
+        json_path: salaryPeriod
+
+      description:
+        json_path: jobDescription
+
+      published_at:
+        json_path: pubDate
 
       url:
         json_path: url

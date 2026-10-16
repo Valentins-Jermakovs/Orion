@@ -95,6 +95,9 @@ class SourceConfig(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     enabled: bool = True
 
+    # True only when the source provides a complete current snapshot.
+    complete_snapshot: bool = False
+
     scraper_type: Literal["html", "csv", "json"] = "html"
 
     start_urls: list[str] = Field(min_length=1)
