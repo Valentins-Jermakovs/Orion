@@ -18,7 +18,7 @@ sources:
         selector: .job-company
 
       location:
-        selector: .location
+        selector: "span.location"
 
       salary_min:
         selector: .salary-block

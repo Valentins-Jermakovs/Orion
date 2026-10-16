@@ -162,9 +162,10 @@ class ScraperService:
                     source_id,
                 )
 
+    
     @staticmethod
     def _parse_salary(value: str | None) -> Decimal | None:
-        """Convert a simple salary string into a decimal amount."""
+        """Convert a salary string into a positive decimal amount."""
         if not value:
             return None
 
@@ -194,10 +195,11 @@ class ScraperService:
         except InvalidOperation:
             return None
 
-        if not amount.is_finite() or amount < 0:
+        if not amount.is_finite() or amount <= 0:
             return None
 
         return amount
+
 
     @staticmethod
     def _parse_date(value: str | None) -> datetime | None:
