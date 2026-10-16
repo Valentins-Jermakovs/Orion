@@ -2,6 +2,7 @@ agent-detector==2.0.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
+asyncpg==0.32.0
 certifi==2026.7.22
 charset-normalizer==3.5.2
 click==8.5.0
@@ -39,10 +40,12 @@ Pygments==2.21.0
 python-dotenv==1.2.4
 python-multipart==0.0.32
 PyYAML==6.0.3
+redis==8.1.0
 requests==2.34.2
 rich==15.0.0
 rich-toolkit==0.20.6
 rignore==0.8.1
+selectolax==1.0.0
 sentry-sdk==2.72.0
 shellingham==1.5.4
 starlette==1.8.0
