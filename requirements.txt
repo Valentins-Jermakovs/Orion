@@ -48,6 +48,8 @@ rignore==0.8.1
 selectolax==1.0.0
 sentry-sdk==2.72.0
 shellingham==1.5.4
+SQLAlchemy==2.1.4
+sqlmodel==0.0.48
 starlette==1.8.0
 typer==0.27.3
 typing-inspection==0.4.4
