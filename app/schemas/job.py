@@ -67,3 +67,23 @@ class JobRead(BaseModel):
     last_seen_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+class JobListRead(BaseModel):
+    """Short representation of a vacancy in search results."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_name: str
+    title: str
+    company: str | None = None
+    location: str | None = None
+    employment_type: str | None = None
+    salary_min: Decimal | None = None
+    salary_max: Decimal | None = None
+    salary_currency: str | None = None
+    salary_period: str | None = None
+    published_at: datetime | None = None
+    original_url: str | None = None
+    status: str

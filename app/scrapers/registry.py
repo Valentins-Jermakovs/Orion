@@ -5,7 +5,6 @@ import httpx
 from app.scrapers.base import BaseScraper
 from app.scrapers.config import SourceConfig
 from app.scrapers.csv_scraper import CSVScraper
-from app.scrapers.generic_html import GenericHTMLScraper
 from app.scrapers.json_scraper import JSONScraper
 
 
@@ -15,12 +14,8 @@ ScraperFactory = Callable[..., BaseScraper]
 class ScraperRegistry:
     """Create the appropriate scraper for each configured source."""
 
-    def __init__(
-        self,
-        default_factory: ScraperFactory | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         self._type_factories: dict[str, ScraperFactory] = {
-            "html": default_factory or GenericHTMLScraper,
             "csv": CSVScraper,
             "json": JSONScraper,
         }

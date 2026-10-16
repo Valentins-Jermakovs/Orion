@@ -56,31 +56,43 @@ def load_sources_config(
 
 
 def _validate_source_fields(source: SourceConfig) -> None:
-    """Check that a source has the field mappings it requires."""
-    if source.scraper_type == "html":
-        required_fields = ("title", "url")
+    """Validate fields required by CSV and JSON vacancy sources."""
+    for field_name in ("title", "url"):
+        field_config = source.fields.get(field_name)
 
-        for field_name in required_fields:
-            field_config = source.fields.get(field_name)
-
-            if field_config is None:
-                raise ValueError(
-                    f"HTML source '{source.source_id}' must define "
-                    f"the '{field_name}' field."
-                )
-
-            if not field_config.required:
-                raise ValueError(
-                    f"Field '{field_name}' must be marked as required "
-                    f"for HTML source '{source.source_id}'."
-                )
-
-    else:
-        if "title" not in source.fields:
+        if field_config is None:
             raise ValueError(
-                f"Source '{source.source_id}' must define a title "
-                f"field mapping."
+                f"Source '{source.source_id}' must define "
+                f"the '{field_name}' field."
             )
+
+        if not field_config.required:
+            raise ValueError(
+                f"Field '{field_name}' must be required "
+                f"for source '{source.source_id}'."
+            )
+
+    for field_name, field_config in source.fields.items():
+        if source.scraper_type == "csv":
+            if (
+                field_config.column is None
+                and field_config.value is None
+            ):
+                raise ValueError(
+                    f"CSV field '{field_name}' in source "
+                    f"'{source.source_id}' must define 'column' or 'value'."
+                )
+
+        elif source.scraper_type == "json":
+            if (
+                field_config.json_path is None
+                and field_config.value is None
+            ):
+                raise ValueError(
+                    f"JSON field '{field_name}' in source "
+                    f"'{source.source_id}' must define "
+                    "'json_path' or 'value'."
+                )
 
 
 def get_enabled_sources(

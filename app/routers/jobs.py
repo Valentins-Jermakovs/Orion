@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.facades.job_facade import JobFacade
 from app.routers.dependencies import get_job_facade
-from app.schemas.job import JobRead
+from app.schemas.job import JobListRead, JobRead
 
 
 router = APIRouter(
@@ -15,7 +15,7 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=list[JobRead])
+@router.get("", response_model=list[JobListRead])
 async def get_jobs(
     facade: Annotated[JobFacade, Depends(get_job_facade)],
     q: str | None = Query(
@@ -62,8 +62,8 @@ async def get_jobs(
         default=0,
         ge=0,
     ),
-) -> list[JobRead]:
-    """Return vacancies matching the requested filters."""
+) -> list[JobListRead]:
+    """Return a concise list of vacancies matching the requested filters."""
     jobs = await facade.get_jobs(
         query=q,
         location=location,
@@ -78,7 +78,7 @@ async def get_jobs(
     )
 
     return [
-        JobRead.model_validate(job)
+        JobListRead.model_validate(job)
         for job in jobs
     ]
 
@@ -88,7 +88,7 @@ async def get_job(
     job_id: UUID,
     facade: Annotated[JobFacade, Depends(get_job_facade)],
 ) -> JobRead:
-    """Return a vacancy by its internal ID."""
+    """Return a vacancy with full details by its internal ID."""
     job = await facade.get_job(job_id)
 
     return JobRead.model_validate(job)

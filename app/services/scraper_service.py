@@ -1,3 +1,4 @@
+
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,6 @@ from app.scrapers.config_loader import (
     get_enabled_sources,
     load_sources_config,
 )
-from app.scrapers.generic_html import GenericHTMLScraper
 from app.scrapers.models import ScrapeResult
 from app.scrapers.registry import ScraperRegistry
 from app.services.job_service import JobService
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScraperService:
-    """Coordinate scraping and saving vacancies from job websites."""
+    """Coordinate scraping and saving vacancies from job sources."""
 
     def __init__(
         self,
@@ -31,10 +31,7 @@ class ScraperService:
     ) -> None:
         self.job_service = JobService(session)
         self.config_path = config_path
-
-        self.scraper_registry = ScraperRegistry(
-            default_factory=GenericHTMLScraper,
-        )
+        self.scraper_registry = ScraperRegistry()
 
     async def scrape_all(self) -> list[ScrapeResult]:
         """Collect and save vacancies from all enabled sources."""
