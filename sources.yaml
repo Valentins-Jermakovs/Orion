@@ -1,33 +1,43 @@
+
 sources:
-  - id: example_jobs
-    name: Example Jobs
-    enabled: false
+  - id: cvmarket_lv
+    name: CVMarket.lv
+    enabled: true
 
     start_urls:
-      - https://example.com/jobs
+      - https://www.cvmarket.lv/darba-piedavajumi
 
-    item_selector: article.job-card
+    item_selector: "section.jobs-list article"
 
     fields:
       title:
-        selector: .job-title
+        selector: h2
         required: true
 
       company:
-        selector: .company-name
+        selector: .job-company
 
       location:
-        selector: .job-location
+        selector: .location
+
+      salary_min:
+        selector: .salary-block
+        attribute: data-salary-from
+
+      salary_max:
+        selector: .salary-block
+        attribute: data-salary-to
+
+      salary_currency:
+        value: EUR
+
+      salary_period:
+        value: month
 
       url:
-        selector: a.job-link
+        selector: a.jobad-url
         attribute: href
         required: true
 
-      external_id:
-        selector: "[data-job-id]"
-        attribute: data-job-id
-
     pagination:
-      next_selector: a[rel="next"]
-      max_pages: 3
+      max_pages: 1

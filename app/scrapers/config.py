@@ -1,4 +1,5 @@
-from pydantic import BaseModel, ConfigDict, Field
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ScraperFieldConfig(BaseModel):
@@ -6,9 +7,25 @@ class ScraperFieldConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    selector: str = Field(min_length=1)
+    selector: str | None = Field(default=None, min_length=1)
     attribute: str | None = None
+    value: str | None = None
     required: bool = False
+
+    @model_validator(mode="after")
+    def validate_configuration(self) -> "ScraperFieldConfig":
+        """Require either a selector or a constant value."""
+        if (self.selector is None) == (self.value is None):
+            raise ValueError(
+                "Specify exactly one of 'selector' or 'value'."
+            )
+
+        if self.attribute and not self.selector:
+            raise ValueError(
+                "An attribute requires a CSS selector."
+            )
+
+        return self
 
 
 class PaginationConfig(BaseModel):

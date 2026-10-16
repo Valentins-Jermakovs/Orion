@@ -136,12 +136,19 @@ class GenericHTMLScraper(BaseScraper):
 
         return ScrapedJob(**data)
 
+    
     def _extract_field(
         self,
         card,
         field_config: ScraperFieldConfig,
     ) -> str | None:
-        """Extract text or an attribute using a CSS selector."""
+        """Extract a constant, text, or attribute from an HTML card."""
+        if field_config.value is not None:
+            return normalize_text(field_config.value)
+
+        if field_config.selector is None:
+            return None
+
         element = card.css_first(field_config.selector)
 
         if element is None:
@@ -156,6 +163,7 @@ class GenericHTMLScraper(BaseScraper):
             value = element.text(separator=" ", strip=True)
 
         return normalize_text(value)
+
 
     def _get_next_page(
         self,

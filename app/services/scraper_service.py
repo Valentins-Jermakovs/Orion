@@ -1,4 +1,3 @@
-
 import logging
 import re
 from datetime import datetime, timezone
@@ -18,7 +17,6 @@ from app.scrapers.generic_html import GenericHTMLScraper
 from app.scrapers.models import ScrapeResult
 from app.scrapers.registry import ScraperRegistry
 from app.services.job_service import JobService
-
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +92,7 @@ class ScraperService:
                     result = ScrapeResult(
                         source_id=source.source_id,
                         source_name=source.name,
-                        errors=[
-                            f"{type(error).__name__}: {error}"
-                        ],
+                        errors=[f"{type(error).__name__}: {error}"],
                     )
 
                 results.append(result)
@@ -114,12 +110,31 @@ class ScraperService:
             try:
                 job_data = scraped_job.model_dump()
 
-                job_data["salary_min"] = self._parse_salary(
-                    job_data["salary_min"]
-                )
-                job_data["salary_max"] = self._parse_salary(
-                    job_data["salary_max"]
-                )
+                job_data["salary_min"] = self._parse_salary(job_data["salary_min"])
+                job_data["salary_max"] = self._parse_salary(job_data["salary_max"])
+
+                salary_min = job_data["salary_min"]
+                salary_max = job_data["salary_max"]
+
+                if (
+                    salary_min is not None
+                    and salary_max is not None
+                    and salary_min > salary_max
+                ):
+                    logger.warning(
+                        "Reversed salary range for '%s' from '%s': %s > %s. "
+                        "Swapping values.",
+                        scraped_job.title,
+                        source_id,
+                        salary_min,
+                        salary_max,
+                    )
+
+                    job_data["salary_min"], job_data["salary_max"] = (
+                        salary_max,
+                        salary_min,
+                    )
+
                 job_data["published_at"] = self._parse_date(
                     job_data["published_at"]
                 )
@@ -191,9 +206,7 @@ class ScraperService:
             return None
 
         try:
-            parsed_date = datetime.fromisoformat(
-                value.strip().replace("Z", "+00:00")
-            )
+            parsed_date = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
         except ValueError:
             return None
 

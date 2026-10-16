@@ -40,19 +40,19 @@ class JobService:
 
         if not data["source_id"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Source ID cannot be empty.",
             )
 
         if not data["source_name"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Source name cannot be empty.",
             )
 
         if not data["title"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Job title cannot be empty.",
             )
 
@@ -66,7 +66,7 @@ class JobService:
             and salary_min > salary_max
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Minimum salary cannot exceed maximum salary.",
             )
 
@@ -85,7 +85,7 @@ class JobService:
             )
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Invalid vacancy URL or source identifier.",
             ) from None
 
@@ -128,13 +128,13 @@ class JobService:
         """Return vacancies matching the requested filters."""
         if not 1 <= limit <= 100:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Limit must be between 1 and 100.",
             )
 
         if offset < 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Offset cannot be negative.",
             )
 
