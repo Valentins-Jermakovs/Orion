@@ -12,6 +12,7 @@ from app.db.session import close_database_connection, engine
 from app.models.job import Job  # noqa: F401
 from app.routers.health import router as health_router
 from app.routers.jobs import router as jobs_router
+from app.routers.sources import router as sources_router
 
 
 configure_logging()
@@ -65,5 +66,11 @@ app.include_router(health_router)
 # Job endpoints: /api/v1/jobs and /api/v1/jobs/{job_id}
 app.include_router(
     jobs_router,
+    prefix=settings.api_v1_prefix,
+)
+
+# Source endpoints: /api/v1/sources/scrape
+app.include_router(
+    sources_router,
     prefix=settings.api_v1_prefix,
 )

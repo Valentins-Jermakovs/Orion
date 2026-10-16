@@ -1,0 +1,33 @@
+sources:
+  - id: example_jobs
+    name: Example Jobs
+    enabled: false
+
+    start_urls:
+      - https://example.com/jobs
+
+    item_selector: article.job-card
+
+    fields:
+      title:
+        selector: .job-title
+        required: true
+
+      company:
+        selector: .company-name
+
+      location:
+        selector: .job-location
+
+      url:
+        selector: a.job-link
+        attribute: href
+        required: true
+
+      external_id:
+        selector: "[data-job-id]"
+        attribute: data-job-id
+
+    pagination:
+      next_selector: a[rel="next"]
+      max_pages: 3
