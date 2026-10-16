@@ -1,7 +1,7 @@
 sources:
   - id: cvmarket_lv
     name: CVMarket.lv
-    enabled: true
+    enabled: false
 
     start_urls:
       - https://www.cvmarket.lv/darba-piedavajumi
