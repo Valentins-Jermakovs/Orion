@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.schemas.job import JobCreate
+from app.schemas import JobCreate
 from app.scrapers.config_loader import (
     get_enabled_sources,
     load_sources_config,

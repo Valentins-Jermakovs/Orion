@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.facades.job_facade import JobFacade
 from app.routers.dependencies import get_job_facade
-from app.schemas.job import JobListRead, JobRead
+from app.schemas import JobListRead, JobRead
 
 
 router = APIRouter(
