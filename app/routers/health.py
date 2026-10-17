@@ -1,10 +1,30 @@
-from fastapi import APIRouter, HTTPException, status
+
+# ==============================
+# Third-party imports
+# ==============================
+
+from fastapi import APIRouter, Depends, HTTPException
+
+# ==============================
+# Application imports
+# ==============================
 
 from app.db import check_database_connection, get_redis
+from app.routers.dependencies import jwt_auth
 
 
-router = APIRouter(tags=["Health"])
+# ==============================
+# Health router
+# ==============================
 
+router = APIRouter(
+    tags=["Health"],
+)
+
+
+# ==============================
+# Public health check
+# ==============================
 
 @router.get("/health")
 async def health_check() -> dict[str, str]:
@@ -12,15 +32,20 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/health/ready")
-async def readiness_check() -> dict[str, str]:
-    """Check whether the application dependencies are available."""
+# ==============================
+# Administrator readiness check
+# ==============================
 
+@router.get("/health/ready")
+async def readiness_check(
+    admin: dict = Depends(jwt_auth.require_roles(["admin"])),
+) -> dict[str, str]:
+    """Check whether application dependencies are available."""
     try:
         await check_database_connection()
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail="Database is unavailable.",
         ) from None
 
@@ -28,7 +53,7 @@ async def readiness_check() -> dict[str, str]:
         await get_redis().ping()
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail="Redis is unavailable.",
         ) from None
 

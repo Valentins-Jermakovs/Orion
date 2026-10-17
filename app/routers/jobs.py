@@ -1,13 +1,30 @@
+
+# ==============================
+# Standard library imports
+# ==============================
+
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
+# ==============================
+# Third-party imports
+# ==============================
+
 from fastapi import APIRouter, Depends, Query
 
+# ==============================
+# Application imports
+# ==============================
+
 from app.facades import JobFacade
-from app.routers.dependencies import get_job_facade
+from app.routers.dependencies import get_job_facade, jwt_auth
 from app.schemas import JobListRead, JobRead
 
+
+# ==============================
+# Jobs router
+# ==============================
 
 router = APIRouter(
     prefix="/jobs",
@@ -15,8 +32,16 @@ router = APIRouter(
 )
 
 
+# ==============================
+# List vacancies
+# ==============================
+
 @router.get("", response_model=list[JobListRead])
 async def get_jobs(
+    current_user: Annotated[
+        dict,
+        Depends(jwt_auth.get_current_user),
+    ],
     facade: Annotated[JobFacade, Depends(get_job_facade)],
     q: str | None = Query(
         default=None,
@@ -63,7 +88,7 @@ async def get_jobs(
         ge=0,
     ),
 ) -> list[JobListRead]:
-    """Return a concise list of vacancies matching the requested filters."""
+    """Return vacancies matching the requested filters."""
     jobs = await facade.get_jobs(
         query=q,
         location=location,
@@ -83,12 +108,20 @@ async def get_jobs(
     ]
 
 
+# ==============================
+# Get vacancy details
+# ==============================
+
 @router.get("/{job_id}", response_model=JobRead)
 async def get_job(
     job_id: UUID,
+    current_user: Annotated[
+        dict,
+        Depends(jwt_auth.get_current_user),
+    ],
     facade: Annotated[JobFacade, Depends(get_job_facade)],
 ) -> JobRead:
-    """Return a vacancy with full details by its internal ID."""
+    """Return full details for a vacancy."""
     job = await facade.get_job(job_id)
 
     return JobRead.model_validate(job)

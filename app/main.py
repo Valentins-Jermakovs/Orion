@@ -22,7 +22,6 @@ from app.db import (
     init_db,
     init_redis,
 )
-from app.middleware import RedisCacheMiddleware
 from app.routers import router as api_router
 
 
@@ -56,9 +55,6 @@ app = FastAPI(
     title="Orion",
     lifespan=lifespan,
 )
-
-# Enable Redis caching for selected GET requests.
-app.add_middleware(RedisCacheMiddleware)
 
 # Register application routes.
 app.include_router(api_router)
