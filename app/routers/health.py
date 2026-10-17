@@ -27,7 +27,9 @@ router = APIRouter(
 # ==============================
 
 @router.get("/health")
-async def health_check() -> dict[str, str]:
+async def health_check(
+    admin: dict = Depends(jwt_auth.require_roles(["admin"])),
+) -> dict[str, str]:
     """Check whether the API is running."""
     return {"status": "ok"}
 
