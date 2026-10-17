@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.job import Job
+from app.models import Job
 
 
 class JobRepository:

@@ -20,7 +20,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # ==============================
 
 from app.config import settings
-from app.models.job import Job  # noqa: F401
+from app.models import Job  # noqa: F401
 
 
 # ==============================

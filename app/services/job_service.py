@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.job import Job
+from app.models import Job
 from app.repositories.job_repository import JobRepository
 from app.schemas import JobCreate
 from app.utils.normalization import (

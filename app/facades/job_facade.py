@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.job import Job
+from app.models import Job
 from app.schemas import JobCreate
 from app.services.job_service import JobService
 
