@@ -1,45 +1,60 @@
+# ==============================
+# Library imports
+# ==============================
 
 from redis.asyncio import Redis
+
+
+# ==============================
+# Application imports
+# ==============================
 
 from app.config.settings import settings
 
 
-redis_client: Redis | None = None
+# ==============================
+# Redis client
+# ==============================
+
+# Redis client is initialized during application startup.
+redis: Redis | None = None
 
 
-async def init_redis() -> Redis:
-    """Initialize Redis and verify the connection."""
-    global redis_client
+# ==============================
+# Redis lifecycle
+# ==============================
 
-    client = Redis.from_url(
-        settings.redis_url.get_secret_value(),
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
+async def init_redis() -> None:
+    """Initialize the Redis client using application settings."""
+    global redis
+
+    password = (
+        settings.redis_password.get_secret_value()
+        if settings.redis_password is not None
+        else None
     )
 
-    try:
-        await client.ping()
-    except Exception:
-        await client.aclose()
-        raise
-
-    redis_client = client
-    return client
+    redis = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        db=settings.redis_db,
+        password=password,
+        decode_responses=True,
+    )
 
 
 def get_redis() -> Redis:
     """Return the initialized Redis client."""
-    if redis_client is None:
+    if redis is None:
         raise RuntimeError("Redis has not been initialized.")
 
-    return redis_client
+    return redis
 
 
-async def close_redis_connection() -> None:
-    """Close the Redis connection."""
-    global redis_client
+async def close_redis() -> None:
+    """Close the Redis connection and release the client."""
+    global redis
 
-    if redis_client is not None:
-        await redis_client.aclose()
-        redis_client = None
+    if redis is not None:
+        await redis.aclose()
+        redis = None

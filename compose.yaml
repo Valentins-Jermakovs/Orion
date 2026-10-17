@@ -1,31 +1,29 @@
-
 services:
+
+  # ==============================
+  # Orion API
+  # ==============================
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
+
     image: orion-job-aggregator:local
     container_name: orion-api
-    restart: unless-stopped
-    init: true
 
-    ports:
-      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
 
     environment:
-      APP_NAME: ${APP_NAME:-Orion Job Aggregator}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
 
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-orion_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-orion_jobs}
-      REDIS_URL: redis://redis:6379/0
-      SCRAPE_API_KEY: ${SCRAPE_API_KEY:?Set SCRAPE_API_KEY in .env}
-
-      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-3600}
-      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-20}
-      MAX_PAGES_PER_SOURCE: ${MAX_PAGES_PER_SOURCE:-5}
-      JOB_EXPIRY_DAYS: ${JOB_EXPIRY_DAYS:-30}
+    ports:
+      - "127.0.0.1:8003:8003"
 
     depends_on:
       postgres:
@@ -35,85 +33,148 @@ services:
 
     healthcheck:
       test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=3)"
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
 
-  worker:
-    image: orion-job-aggregator:local
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: orion-worker
     restart: unless-stopped
     init: true
 
-    command: ["python", "-m", "app.worker"]
+    networks:
+      - back_end
+
+
+  # ==============================
+  # Orion Worker
+  # ==============================
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: orion-job-aggregator:local
+    container_name: orion-worker
+
+    env_file:
+      - .env
 
     environment:
-      APP_NAME: ${APP_NAME:-Orion Job Aggregator}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
 
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-orion_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-orion_jobs}
-      REDIS_URL: redis://redis:6379/0
-      SCRAPE_API_KEY: ${SCRAPE_API_KEY:?Set SCRAPE_API_KEY in .env}
-
-      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-3600}
-      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-20}
-      MAX_PAGES_PER_SOURCE: ${MAX_PAGES_PER_SOURCE:-5}
-      JOB_EXPIRY_DAYS: ${JOB_EXPIRY_DAYS:-30}
+    command:
+      - python
+      - -m
+      - app.worker
 
     depends_on:
-      api:
-        condition: service_healthy
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
+    init: true
+
+    networks:
+      - back_end
+
+
+  # ==============================
+  # PostgreSQL 18
+  # ==============================
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: orion-postgres
-    restart: unless-stopped
 
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-orion_jobs}
       POSTGRES_USER: ${POSTGRES_USER:-orion_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
 
+    ports:
+      - "127.0.0.1:55441:5432"
+
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
 
     healthcheck:
       test:
-        - CMD-SHELL
-        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
-      interval: 10s
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""
+        ]
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+
+    restart: unless-stopped
+
+    networks:
+      - back_end
+
+
+  # ==============================
+  # Redis 8
+  # ==============================
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: orion-redis
-    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:56381:6379"
+
+    volumes:
+      - redis_data:/data
 
     command:
       - redis-server
-      - --save
-      - ""
       - --appendonly
-      - "no"
+      - "yes"
 
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+
+    restart: unless-stopped
+
+    networks:
+      - back_end
+
+
+# ==============================
+# Persistent volumes
+# ==============================
 
 volumes:
-  postgres_data:
+  postgres18_data:
+  redis_data:
+
+
+# ==============================
+# Shared network
+# ==============================
+
+networks:
+  back_end:
+    external: true

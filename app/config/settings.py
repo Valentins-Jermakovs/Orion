@@ -1,12 +1,20 @@
-from functools import lru_cache
+
+# ==============================
+# Library imports
+# ==============================
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# ==============================
+# Application settings
+# ==============================
+
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
+    # .env file configuration.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -14,25 +22,28 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Orion Job Aggregator"
-    environment: str = "development"
-    api_v1_prefix: str = "/api/v1"
-    log_level: str = "INFO"
+    # PostgreSQL connection settings.
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+    postgres_db: str
+    postgres_user: str
+    postgres_password: SecretStr
 
-    database_url: SecretStr
-    redis_url: SecretStr
+    # Redis connection settings.
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: SecretStr | None = None
+
+    # API key required to trigger a scraping operation.
     scrape_api_key: SecretStr
 
+    # Delay between consecutive scraping cycles in seconds.
     scrape_interval_seconds: int = 3600
-    request_timeout_seconds: int = 20
-    max_pages_per_source: int = 5
-    job_expiry_days: int = 30
 
 
-@lru_cache
-def get_settings() -> Settings:
-    """Return a cached application configuration."""
-    return Settings()
+# ==============================
+# Settings instance
+# ==============================
 
-
-settings = get_settings()
+settings = Settings()
