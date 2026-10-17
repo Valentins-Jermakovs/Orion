@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # Application imports
 # ==============================
 
-from app.scrapers.models import ScrapeResult
+from app.scrapers import ScrapeResult
 from app.services.scraper_service import ScraperService
 
 

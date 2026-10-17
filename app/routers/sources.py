@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.config import settings
 from app.facades import ScraperFacade
 from app.routers.dependencies import get_scraper_facade
-from app.scrapers.models import ScrapeResult
+from app.scrapers import ScrapeResult
 
 
 router = APIRouter(

@@ -21,8 +21,10 @@ from app.scrapers.config_loader import (
     get_enabled_sources,
     load_sources_config,
 )
-from app.scrapers.models import ScrapeResult
-from app.scrapers.registry import ScraperRegistry
+from app.scrapers import (
+    ScrapeResult,
+    ScraperRegistry,
+)
 from app.services.job_service import JobService
 
 

@@ -1,18 +1,38 @@
+# ==============================
+# Standard library imports
+# ==============================
+
 import csv
 import io
 import logging
 from urllib.parse import urljoin, urlsplit
 
+# ==============================
+# Third-party imports
+# ==============================
+
 import httpx
 
+# ==============================
+# Application imports
+# ==============================
+
 from app.scrapers.base import BaseScraper
-from app.scrapers.config import SourceConfig, ScraperFieldConfig
+from app.scrapers.config import ScraperFieldConfig, SourceConfig
 from app.scrapers.models import ScrapedJob, ScrapeResult
 from app.utils import normalize_text
 
 
+# ==============================
+# Logger configuration
+# ==============================
+
 logger = logging.getLogger(__name__)
 
+
+# ==============================
+# CSV scraper
+# ==============================
 
 class CSVScraper(BaseScraper):
     """Collect vacancies from configurable CSV data sources."""
@@ -22,6 +42,7 @@ class CSVScraper(BaseScraper):
         source: SourceConfig,
         client: httpx.AsyncClient,
     ) -> None:
+        """Initialize the scraper with source configuration and HTTP client."""
         super().__init__(
             source_id=source.source_id,
             source_name=source.name,
@@ -29,6 +50,10 @@ class CSVScraper(BaseScraper):
         )
 
         self.source = source
+
+    # ==============================
+    # Public methods
+    # ==============================
 
     async def scrape(self) -> ScrapeResult:
         """Download CSV files and convert their rows into vacancies."""
@@ -51,12 +76,11 @@ class CSVScraper(BaseScraper):
 
                 # Normalize column headers, including a possible BOM.
                 reader.fieldnames = [
-                    name.strip().lstrip("\ufeff")
-                    if name
-                    else ""
+                    name.strip().lstrip("\ufeff") if name else ""
                     for name in reader.fieldnames
                 ]
 
+                # Parse each data row independently.
                 for row_number, row in enumerate(reader, start=2):
                     try:
                         job = self._parse_row(
@@ -95,11 +119,12 @@ class CSVScraper(BaseScraper):
             errors=errors,
         )
 
-    def _create_reader(
-        self,
-        content: str,
-    ) -> csv.DictReader:
-        """Create a CSV reader and detect the delimiter."""
+    # ==============================
+    # CSV reader
+    # ==============================
+
+    def _create_reader(self, content: str) -> csv.DictReader:
+        """Create a CSV reader and automatically detect the delimiter."""
         content = content.lstrip("\ufeff")
 
         if not content.strip():
@@ -121,6 +146,10 @@ class CSVScraper(BaseScraper):
             dialect=dialect,
         )
 
+    # ==============================
+    # Row parsing
+    # ==============================
+
     def _parse_row(
         self,
         row: dict[str, str | None],
@@ -136,6 +165,7 @@ class CSVScraper(BaseScraper):
             if key
         }
 
+        # Extract values according to the source configuration.
         for field_name, field_config in self.source.fields.items():
             value = self._extract_field(
                 row=normalized_row,
@@ -147,7 +177,7 @@ class CSVScraper(BaseScraper):
                     f"Required field '{field_name}' is missing."
                 )
 
-            # Support either 'url' or 'original_url' in the configuration.
+            # Map the configured URL field to the model attribute.
             target_field = (
                 "original_url"
                 if field_name == "url"
@@ -156,17 +186,15 @@ class CSVScraper(BaseScraper):
 
             data[target_field] = value
 
+        # Skip rows without a vacancy title.
         if not data.get("title"):
             return None
 
-        # Bulk datasets do not always provide a URL for each vacancy.
-        # Use the dataset URL as a fallback, not as a fabricated job URL.
-        original_url = data.get("original_url")
-
-        if not original_url:
-            original_url = source_url
-
+        # Use the dataset URL if the vacancy has no individual URL.
+        original_url = data.get("original_url") or source_url
         original_url = urljoin(source_url, original_url)
+
+        # Accept only HTTP and HTTPS URLs.
         scheme = urlsplit(original_url).scheme
 
         if scheme not in {"http", "https"}:
@@ -176,17 +204,23 @@ class CSVScraper(BaseScraper):
 
         data["original_url"] = original_url
 
+        # Allow the application to handle missing external identifiers.
         if not data.get("external_id"):
             data["external_id"] = None
 
         return ScrapedJob(**data)
+
+    # ==============================
+    # Field extraction
+    # ==============================
 
     def _extract_field(
         self,
         row: dict[str, str | None],
         field_config: ScraperFieldConfig,
     ) -> str | None:
-        """Extract a value from a CSV column or constant."""
+        """Extract a value from a CSV column or a configured constant."""
+        # Return a constant value when one is configured.
         if field_config.value is not None:
             return normalize_text(field_config.value)
 
@@ -195,6 +229,7 @@ class CSVScraper(BaseScraper):
                 "CSV fields must use 'column' or 'value' configuration."
             )
 
+        # Match column names without regard to case or surrounding spaces.
         column_name = field_config.column.strip().casefold()
         value = row.get(column_name)
 
