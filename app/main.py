@@ -5,8 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 
-from app.db.redis import close_redis, init_redis
-from app.db.session import close_database_connection, init_db
+from app.db import (
+    close_database_connection,
+    close_redis,
+    init_db,
+    init_redis,
+)
 
 from app.routers import router as api_router
 

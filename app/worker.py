@@ -2,11 +2,8 @@
 import asyncio
 import logging
 
-from app.config.settings import settings
-from app.db.session import (
-    async_session_factory,
-    close_database_connection,
-)
+from app.config import settings
+from app.db import async_session_factory, close_database_connection
 from app.services.scraper_service import ScraperService
 
 

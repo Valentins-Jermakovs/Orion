@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.db.redis import get_redis
-from app.db.session import check_database_connection
+from app.db import check_database_connection, get_redis
 
 
 router = APIRouter(tags=["Health"])

@@ -9,7 +9,7 @@ from redis.asyncio import Redis
 # Application imports
 # ==============================
 
-from app.config.settings import settings
+from app.config import settings
 
 
 # ==============================
