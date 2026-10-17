@@ -2,4 +2,13 @@
 # Application imports
 # ==============================
 
-from .job import JobCreate, JobListRead, JobRead
+from .job import (
+    JobCreate, 
+    JobListRead, 
+    JobRead
+)
+
+from .statistics import (
+    SourceStatisticsRead,
+    StatisticsOverviewRead,
+)
