@@ -9,7 +9,7 @@ import httpx
 from app.scrapers.base import BaseScraper
 from app.scrapers.config import SourceConfig, ScraperFieldConfig
 from app.scrapers.models import ScrapedJob, ScrapeResult
-from app.utils.normalization import (
+from app.utils import (
     normalize_description,
     normalize_text,
 )

@@ -1,9 +1,19 @@
+
+# ==============================
+# Library imports
+# ==============================
+
 import hashlib
 import html
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
+# ==============================
+# Encoding normalization
+# ==============================
+
+# Common markers that indicate incorrectly decoded UTF-8 text.
 _MOJIBAKE_MARKERS = (
     "Ã",
     "Â",
@@ -23,7 +33,7 @@ def _mojibake_score(value: str) -> int:
 
 
 def _try_repair_piece(value: str) -> str | None:
-    """Try to decode one piece of text that was misread as legacy encoding."""
+    """Try to repair a text segment using common legacy encodings."""
     original_score = _mojibake_score(value)
 
     for encoding in ("cp1252", "latin-1"):
@@ -39,14 +49,13 @@ def _try_repair_piece(value: str) -> str | None:
 
 
 def _repair_piece(value: str) -> str:
-    """Repair mojibake in a text segment without changing valid text."""
+    """Repair encoding artefacts without changing valid text unnecessarily."""
     candidate = _try_repair_piece(value)
 
     if candidate is not None:
         return candidate
 
-    # If valid non-ASCII characters prevent decoding the whole segment,
-    # try repairing only short windows around suspicious characters.
+    # Try repairing short sections around suspicious characters.
     for marker in _MOJIBAKE_MARKERS:
         search_position = 0
 
@@ -86,7 +95,7 @@ def _repair_piece(value: str) -> str:
 
 
 def repair_mojibake(value: str | None) -> str | None:
-    """Repair common UTF-8 text that was decoded with the wrong encoding."""
+    """Repair common UTF-8 text decoded with the wrong encoding."""
     if value is None:
         return None
 
@@ -106,8 +115,7 @@ def repair_mojibake(value: str | None) -> str | None:
             repaired = candidate
             continue
 
-        # Keep emoji and valid non-ASCII characters outside the failing
-        # conversion segment rather than damaging the entire description.
+        # Repair individual text segments to preserve valid Unicode.
         repaired = re.sub(
             r"\S+",
             lambda match: _repair_piece(match.group(0)),
@@ -116,6 +124,10 @@ def repair_mojibake(value: str | None) -> str | None:
 
     return repaired
 
+
+# ==============================
+# Text normalization
+# ==============================
 
 def normalize_text(value: str | None) -> str | None:
     """Repair encoding artefacts and normalize whitespace."""
@@ -129,13 +141,13 @@ def normalize_text(value: str | None) -> str | None:
 
 
 def normalize_description(value: str | None) -> str | None:
-    """Convert an HTML description to readable plain text."""
+    """Convert an HTML description into readable plain text."""
     if value is None:
         return None
 
     description = repair_mojibake(value) or ""
 
-    # Remove script and style contents before stripping HTML elements.
+    # Remove script and style contents before stripping HTML tags.
     description = re.sub(
         r"<(script|style)\b[^>]*>.*?</\1\s*>",
         "",
@@ -143,7 +155,7 @@ def normalize_description(value: str | None) -> str | None:
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    # Preserve meaningful line breaks.
+    # Preserve meaningful line breaks and list formatting.
     description = re.sub(
         r"<br\s*/?>",
         "\n",
@@ -165,7 +177,7 @@ def normalize_description(value: str | None) -> str | None:
         flags=re.IGNORECASE,
     )
 
-    # Remove the remaining HTML tags.
+    # Remove remaining HTML tags.
     description = re.sub(r"<[^>]+>", "", description)
 
     # Decode entities such as &amp;, &nbsp;, and &#39;.
@@ -180,8 +192,12 @@ def normalize_description(value: str | None) -> str | None:
     return description.strip() or None
 
 
+# ==============================
+# URL normalization
+# ==============================
+
 def normalize_url(url: str) -> str:
-    """Normalize a URL before using it for deduplication."""
+    """Normalize an absolute URL before using it for deduplication."""
     parts = urlsplit(url.strip())
 
     scheme = parts.scheme.lower()
@@ -201,7 +217,7 @@ def normalize_url(url: str) -> str:
 
     path = parts.path.rstrip("/") or "/"
 
-    # Remove common tracking parameters but preserve other query parameters.
+    # Remove common tracking parameters while preserving other parameters.
     tracking_parameters = {
         "fbclid",
         "gclid",
@@ -232,17 +248,22 @@ def normalize_url(url: str) -> str:
     )
 
 
+# ==============================
+# Vacancy deduplication
+# ==============================
+
 def create_deduplication_key(
     source_id: str,
     original_url: str,
     external_id: str | None = None,
 ) -> str:
-    """Create a stable key for identifying a vacancy."""
+    """Create a stable hash for identifying a vacancy."""
     normalized_source = source_id.strip().lower()
 
     if not normalized_source:
         raise ValueError("Source ID cannot be empty.")
 
+    # Prefer the source identifier when one is available.
     if external_id and external_id.strip():
         unique_value = (
             f"{normalized_source}:id:{external_id.strip()}"

@@ -8,7 +8,7 @@ import httpx
 from app.scrapers.base import BaseScraper
 from app.scrapers.config import SourceConfig, ScraperFieldConfig
 from app.scrapers.models import ScrapedJob, ScrapeResult
-from app.utils.normalization import normalize_text
+from app.utils import normalize_text
 
 
 logger = logging.getLogger(__name__)

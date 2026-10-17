@@ -18,7 +18,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models import Job
 from app.repositories import JobRepository
 from app.schemas import JobCreate
-from app.utils.normalization import (
+from app.utils import (
     create_deduplication_key,
     normalize_description,
     normalize_text,
