@@ -1,14 +1,29 @@
+# ==============================
+# Standard library imports
+# ==============================
 
 import asyncio
 import logging
 
+# ==============================
+# Application imports
+# ==============================
+
 from app.config import settings
 from app.db import async_session_factory, close_database_connection
-from app.services.scraper_service import ScraperService
+from app.services import ScraperService
 
+
+# ==============================
+# Logger configuration
+# ==============================
 
 logger = logging.getLogger(__name__)
 
+
+# ==============================
+# Worker
+# ==============================
 
 async def run_worker() -> None:
     """Periodically collect vacancies from configured sources."""
@@ -24,35 +39,33 @@ async def run_worker() -> None:
     try:
         while True:
             try:
-                # Create a database session for the current scraping cycle.
+                # Run one scraping cycle using a dedicated database session.
                 async with async_session_factory() as session:
                     scraper_service = ScraperService(session)
                     results = await scraper_service.scrape_all()
 
-                # Calculate the number of collected vacancies and errors.
+                # Aggregate scraping statistics.
                 jobs_found = sum(
                     len(result.jobs)
                     for result in results
                 )
-
                 errors_count = sum(
                     len(result.errors)
                     for result in results
                 )
 
                 logger.info(
-                    "Scraping cycle completed. "
-                    "Sources: %s, vacancies: %s, errors: %s.",
+                    "Scraping cycle completed: "
+                    "sources=%s, vacancies=%s, errors=%s.",
                     len(results),
                     jobs_found,
                     errors_count,
                 )
 
             except Exception:
-                # Keep the worker running if a scraping cycle fails.
+                # Retry automatically after an unsuccessful cycle.
                 logger.exception(
-                    "Scraping cycle failed. The worker will retry "
-                    "after %s seconds.",
+                    "Scraping cycle failed. Retrying in %s seconds.",
                     interval,
                 )
 
@@ -64,25 +77,25 @@ async def run_worker() -> None:
             await asyncio.sleep(interval)
 
     finally:
-        # Close database resources when the worker stops.
-        await close_database_connection()
-        logger.info("Orion scraper worker stopped.")
+        # Release database resources when the worker stops.
+        try:
+            await close_database_connection()
+        finally:
+            logger.info("Orion scraper worker stopped.")
 
+
+# ==============================
+# Worker entry point
+# ==============================
 
 if __name__ == "__main__":
-    # Configure basic console logging without a separate module.
     logging.basicConfig(
         level=logging.INFO,
-        format=(
-            "%(asctime)s | %(levelname)s | "
-            "%(name)s | %(message)s"
-        ),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     try:
         asyncio.run(run_worker())
     except KeyboardInterrupt:
-        logging.getLogger(__name__).info(
-            "Worker stopped by keyboard interrupt."
-        )
+        logger.info("Worker stopped by keyboard interrupt.")
