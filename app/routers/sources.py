@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.config import settings
-from app.facades.scraper_facade import ScraperFacade
+from app.facades import ScraperFacade
 from app.routers.dependencies import get_scraper_facade
 from app.scrapers.models import ScrapeResult
 

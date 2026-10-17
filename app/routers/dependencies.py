@@ -4,8 +4,8 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import get_session
-from app.facades.job_facade import JobFacade
-from app.facades.scraper_facade import ScraperFacade
+from app.facades import JobFacade
+from app.facades import ScraperFacade
 
 
 def get_job_facade(
