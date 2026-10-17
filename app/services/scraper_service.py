@@ -1,3 +1,6 @@
+# ==============================
+# Library imports
+# ==============================
 
 import logging
 import re
@@ -7,6 +10,11 @@ from pathlib import Path
 
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+
+# ==============================
+# Application imports
+# ==============================
 
 from app.schemas import JobCreate
 from app.scrapers.config_loader import (
@@ -18,20 +26,33 @@ from app.scrapers.registry import ScraperRegistry
 from app.services.job_service import JobService
 
 
+# ==============================
+# Logger
+# ==============================
+
 logger = logging.getLogger(__name__)
 
 
+# ==============================
+# Scraper service
+# ==============================
+
 class ScraperService:
-    """Coordinate scraping and saving vacancies from job sources."""
+    """Coordinate vacancy collection and database updates."""
 
     def __init__(
         self,
         session: AsyncSession,
         config_path: Path = Path("sources.yaml"),
     ) -> None:
+        """Initialize the service and its dependencies."""
         self.job_service = JobService(session)
         self.config_path = config_path
         self.scraper_registry = ScraperRegistry()
+
+    # ==============================
+    # Scraping
+    # ==============================
 
     async def scrape_all(self) -> list[ScrapeResult]:
         """Collect and save vacancies from all enabled sources."""
@@ -73,44 +94,12 @@ class ScraperService:
                         result=result,
                     )
 
-                    # Only sources that provide a complete snapshot can
-                    # safely mark previously collected jobs as inactive.
-                    if source.complete_snapshot:
-                        if (
-                            result.jobs
-                            and result.pages_processed > 0
-                            and not result.errors
-                        ):
-                            inactive_count = (
-                                await self.job_service.mark_not_seen_inactive(
-                                    source_id=source.source_id,
-                                    cutoff=source_started_at,
-                                )
-                            )
-
-                            if inactive_count:
-                                logger.info(
-                                    "Marked %s vacancies inactive for "
-                                    "source '%s'.",
-                                    inactive_count,
-                                    source.source_id,
-                                )
-                        else:
-                            logger.warning(
-                                "Skipping stale-vacancy update for source "
-                                "'%s': jobs=%s, pages=%s, errors=%s.",
-                                source.source_id,
-                                len(result.jobs),
-                                result.pages_processed,
-                                len(result.errors),
-                            )
-                    else:
-                        logger.debug(
-                            "Skipping stale-vacancy update for source "
-                            "'%s': source does not provide a complete "
-                            "snapshot.",
-                            source.source_id,
-                        )
+                    await self._update_source_lifecycle(
+                        source_id=source.source_id,
+                        complete_snapshot=source.complete_snapshot,
+                        source_started_at=source_started_at,
+                        result=result,
+                    )
 
                     logger.info(
                         "Finished source '%s': %s vacancies found, "
@@ -139,6 +128,54 @@ class ScraperService:
 
         return results
 
+    async def _update_source_lifecycle(
+        self,
+        source_id: str,
+        complete_snapshot: bool,
+        source_started_at: datetime,
+        result: ScrapeResult,
+    ) -> None:
+        """Deactivate outdated vacancies after a complete successful scrape."""
+        if not complete_snapshot:
+            logger.debug(
+                "Skipping stale-vacancy update for source '%s': "
+                "the source does not provide a complete snapshot.",
+                source_id,
+            )
+            return
+
+        # Never deactivate vacancies after an incomplete or failed scrape.
+        if (
+            not result.jobs
+            or result.pages_processed == 0
+            or result.errors
+        ):
+            logger.warning(
+                "Skipping stale-vacancy update for source '%s': "
+                "jobs=%s, pages=%s, errors=%s.",
+                source_id,
+                len(result.jobs),
+                result.pages_processed,
+                len(result.errors),
+            )
+            return
+
+        inactive_count = await self.job_service.mark_not_seen_inactive(
+            source_id=source_id,
+            cutoff=source_started_at,
+        )
+
+        if inactive_count:
+            logger.info(
+                "Marked %s vacancies inactive for source '%s'.",
+                inactive_count,
+                source_id,
+            )
+
+    # ==============================
+    # Save vacancies
+    # ==============================
+
     async def _save_jobs(
         self,
         source_id: str,
@@ -150,7 +187,7 @@ class ScraperService:
             try:
                 job_data = scraped_job.model_dump()
 
-                # Parse salary values.
+                # Normalize salary amounts and correct reversed ranges.
                 job_data["salary_min"] = self._parse_salary(
                     job_data["salary_min"]
                 )
@@ -158,7 +195,6 @@ class ScraperService:
                     job_data["salary_max"]
                 )
 
-                # Correct reversed salary ranges.
                 salary_min = job_data["salary_min"]
                 salary_max = job_data["salary_max"]
 
@@ -181,12 +217,12 @@ class ScraperService:
                         salary_min,
                     )
 
-                # Convert the source salary period to a standard value.
+                # Convert the salary period to a standard value.
                 job_data["salary_period"] = self._parse_salary_period(
                     job_data["salary_period"]
                 )
 
-                # Parse the publication date.
+                # Convert the publication date to a timezone-aware value.
                 job_data["published_at"] = self._parse_date(
                     job_data["published_at"]
                 )
@@ -201,8 +237,7 @@ class ScraperService:
 
             except Exception as error:
                 message = (
-                    f"Failed to save vacancy "
-                    f"'{scraped_job.title}': "
+                    f"Failed to save vacancy '{scraped_job.title}': "
                     f"{type(error).__name__}: {error}"
                 )
 
@@ -213,6 +248,10 @@ class ScraperService:
                     scraped_job.title,
                     source_id,
                 )
+
+    # ==============================
+    # Salary normalization
+    # ==============================
 
     @staticmethod
     def _parse_salary(value: str | None) -> Decimal | None:
@@ -246,7 +285,7 @@ class ScraperService:
         except InvalidOperation:
             return None
 
-        # Zero usually means that the source did not provide a salary.
+        # Ignore zero, negative, and non-finite salary values.
         if not amount.is_finite() or amount <= 0:
             return None
 
@@ -254,7 +293,7 @@ class ScraperService:
 
     @staticmethod
     def _parse_salary_period(value: str | None) -> str | None:
-        """Convert the salary period to a standard value."""
+        """Convert a salary period to a standard value."""
         if not value:
             return None
 
@@ -310,6 +349,10 @@ class ScraperService:
 
         return None
 
+    # ==============================
+    # Date normalization
+    # ==============================
+
     @staticmethod
     def _parse_date(value: str | None) -> datetime | None:
         """Parse ISO dates, formatted dates, and Latvian relative times."""
@@ -347,7 +390,7 @@ class ScraperService:
             except ValueError:
                 continue
 
-        # Parse relative dates, for example "pirms 3 stundām".
+        # Parse Latvian relative dates, such as "pirms 3 stundām".
         match = re.search(
             r"pirms\s+(\d+)\s+([a-zāčēģīķļņōŗšūž]+)",
             normalized,

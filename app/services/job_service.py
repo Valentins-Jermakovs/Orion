@@ -1,12 +1,22 @@
+
+# ==============================
+# Library imports
+# ==============================
+
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+
+# ==============================
+# Application imports
+# ==============================
+
 from app.models import Job
-from app.repositories.job_repository import JobRepository
+from app.repositories import JobRepository
 from app.schemas import JobCreate
 from app.utils.normalization import (
     create_deduplication_key,
@@ -15,19 +25,29 @@ from app.utils.normalization import (
 )
 
 
+# ==============================
+# Job service
+# ==============================
+
 class JobService:
     """Handle business logic for job vacancies."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the service and its repository."""
         self.session = session
         self.repository = JobRepository(session)
+
+    # ==============================
+    # Create or update vacancies
+    # ==============================
 
     async def create_or_update(self, job_data: JobCreate) -> Job:
         """Create a vacancy or update an existing one."""
         data = job_data.model_dump()
+
+        # Normalize the source identifier and text fields.
         data["source_id"] = data["source_id"].strip().lower()
 
-        # Normalize fields containing short text values.
         for field in (
             "source_name",
             "title",
@@ -43,21 +63,22 @@ class JobService:
             data["description"]
         )
 
+        # Validate required source information.
         if not data["source_id"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Source ID cannot be empty.",
             )
 
         if not data["source_name"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Source name cannot be empty.",
             )
 
         if not data["title"]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Job title cannot be empty.",
             )
 
@@ -71,7 +92,7 @@ class JobService:
             and salary_min > salary_max
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Minimum salary cannot exceed maximum salary.",
             )
 
@@ -90,12 +111,11 @@ class JobService:
             )
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Invalid vacancy URL or source identifier.",
             ) from None
 
-        # New vacancies are active. If an inactive vacancy appears
-        # again, the upsert will reactivate it.
+        # Create the vacancy and prepare it for insertion or update.
         job = Job(
             **data,
             deduplication_key=deduplication_key,
@@ -104,12 +124,15 @@ class JobService:
         try:
             saved_job = await self.repository.upsert(job)
             await self.session.commit()
-
             return saved_job
 
         except Exception:
             await self.session.rollback()
             raise
+
+    # ==============================
+    # Vacancy lifecycle
+    # ==============================
 
     async def mark_not_seen_inactive(
         self,
@@ -124,12 +147,15 @@ class JobService:
             )
 
             await self.session.commit()
-
             return count
 
         except Exception:
             await self.session.rollback()
             raise
+
+    # ==============================
+    # Retrieve vacancies
+    # ==============================
 
     async def get_job(self, job_id: UUID) -> Job:
         """Return a vacancy by its internal ID."""
@@ -137,7 +163,7 @@ class JobService:
 
         if job is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail="Job vacancy not found.",
             )
 
@@ -157,34 +183,37 @@ class JobService:
         offset: int = 0,
     ) -> list[Job]:
         """Return vacancies matching the requested filters."""
+
+        # Validate pagination parameters.
         if not 1 <= limit <= 100:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Limit must be between 1 and 100.",
             )
 
         if offset < 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="Offset cannot be negative.",
             )
 
+        # Validate the requested salary range.
         if (
             min_salary is not None
             and max_salary is not None
             and min_salary > max_salary
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail="min_salary cannot exceed max_salary.",
             )
 
-        # Salary values in different currencies must not be compared.
+        # Require a currency when filtering by salary.
         if (
             min_salary is not None or max_salary is not None
         ) and not salary_currency:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=422,
                 detail=(
                     "salary_currency is required when filtering by salary."
                 ),
@@ -193,6 +222,7 @@ class JobService:
         if salary_currency:
             salary_currency = salary_currency.strip().upper()
 
+        # Delegate filtering and pagination to the repository.
         return await self.repository.list_jobs(
             query=query,
             location=location,

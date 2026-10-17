@@ -1,3 +1,7 @@
+# ==============================
+# Library imports
+# ==============================
+
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -7,14 +11,28 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+
+# ==============================
+# Application imports
+# ==============================
+
 from app.models import Job
 
+
+# ==============================
+# Job repository
+# ==============================
 
 class JobRepository:
     """Provide database operations for job vacancies."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with a database session."""
         self.session = session
+
+    # ==============================
+    # Retrieve vacancies
+    # ==============================
 
     async def get_by_id(self, job_id: UUID) -> Job | None:
         """Find a vacancy by its internal ID."""
@@ -27,7 +45,7 @@ class JobRepository:
         self,
         deduplication_key: str,
     ) -> Job | None:
-        """Find a vacancy using its unique deduplication key."""
+        """Find a vacancy by its unique deduplication key."""
         statement = select(Job).where(
             Job.deduplication_key == deduplication_key
         )
@@ -48,9 +66,10 @@ class JobRepository:
         limit: int = 20,
         offset: int = 0,
     ) -> list[Job]:
-        """Return vacancies matching the supplied filters."""
+        """Return vacancies matching the requested filters."""
         statement = select(Job).where(Job.status == status)
 
+        # Search vacancy titles, company names, and descriptions.
         if query:
             search_term = f"%{query.strip()}%"
             statement = statement.where(
@@ -61,6 +80,7 @@ class JobRepository:
                 )
             )
 
+        # Filter by location, source, and employment type.
         if location:
             statement = statement.where(
                 Job.location.ilike(f"%{location.strip()}%")
@@ -78,14 +98,13 @@ class JobRepository:
                 )
             )
 
+        # Match the requested salary currency.
         if salary_currency:
             statement = statement.where(
                 Job.salary_currency == salary_currency.strip().upper()
             )
 
-        # Minimum salary: the vacancy's salary range must reach
-        # the requested minimum. If only salary_min is available,
-        # it must itself be at least the requested minimum.
+        # The vacancy range must reach the requested minimum salary.
         if min_salary is not None:
             statement = statement.where(
                 or_(
@@ -97,9 +116,7 @@ class JobRepository:
                 )
             )
 
-        # Maximum salary: the vacancy's range must start at or below
-        # the requested maximum. If only salary_max is available,
-        # it must itself be at most the requested maximum.
+        # The vacancy range must start at or below the requested maximum.
         if max_salary is not None:
             statement = statement.where(
                 or_(
@@ -111,6 +128,7 @@ class JobRepository:
                 )
             )
 
+        # Show the newest published vacancies first.
         statement = (
             statement
             .order_by(
@@ -125,11 +143,16 @@ class JobRepository:
 
         return list(result.all())
 
+    # ==============================
+    # Insert or update vacancies
+    # ==============================
+
     async def upsert(self, job: Job) -> Job:
-        """Insert a vacancy or update it if its key already exists."""
+        """Insert a vacancy or update an existing matching record."""
         job_data = job.model_dump()
         statement = postgresql_insert(Job).values(job_data)
 
+        # Preserve the original ID, deduplication key, and creation dates.
         immutable_fields = {
             "id",
             "deduplication_key",
@@ -159,12 +182,16 @@ class JobRepository:
 
         return result.scalar_one()
 
+    # ==============================
+    # Vacancy lifecycle
+    # ==============================
+
     async def mark_not_seen_inactive(
         self,
         source_id: str,
         cutoff: datetime,
     ) -> int:
-        """Mark active vacancies not seen during a successful scrape."""
+        """Deactivate active vacancies not seen in a completed scrape."""
         statement = (
             update(Job)
             .where(
