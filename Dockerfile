@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY sources.yaml ./sources.yaml
 
-EXPOSE 8003
+EXPOSE 8002
 
 # Start the Orion API by default.
 # The worker overrides this command in compose.yaml.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]
